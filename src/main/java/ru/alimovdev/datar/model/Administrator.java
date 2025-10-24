@@ -12,8 +12,12 @@ public class Administrator {
     @Id
     private long id;
 
+    private String ownerId;
+
     @Column(columnDefinition = "varchar(1000000)")
     private String specialistIdList;
+
+    private String currentSpecialistId;
 
     private String name;
 
@@ -24,6 +28,8 @@ public class Administrator {
     private String phoneNumber;
 
     private String password;
+
+    private boolean isOwner;
 
     @Override
     public String toString() {

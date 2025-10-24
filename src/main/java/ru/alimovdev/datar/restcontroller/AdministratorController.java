@@ -15,7 +15,7 @@ import java.util.Optional;
 @RequestMapping("/api")
 public class AdministratorController {
     @Autowired
-    private AdministratorRepository administratorRepository;
+    private AdministratorRepository adminRepository;
 
     // Обработка OPTIONS запросов для CORS (TODO добавил)
     @RequestMapping(value = "/**", method = RequestMethod.OPTIONS)
@@ -25,7 +25,7 @@ public class AdministratorController {
 
     @GetMapping("/administrators")
     public List<Administrator> getAllAdministrators() {
-        Iterable<Administrator> administrators = administratorRepository.findAll();
+        Iterable<Administrator> administrators = adminRepository.findAll();
         List<Administrator> administratorList = new ArrayList<>();
         administrators.forEach(administratorList::add); // TODO remake
         return administratorList;
@@ -34,13 +34,13 @@ public class AdministratorController {
     // Добавить нового пользователя
     @PostMapping("/administrators")
     public Administrator addClient(@RequestBody Administrator administrator) {
-        return administratorRepository.save(administrator);
+        return adminRepository.save(administrator);
     }
 
     // Удалить пользователя
     @DeleteMapping("/administrators/{id}")
     public void deleteAdministrator(@PathVariable long id) {
-        administratorRepository.deleteById(id);
+        adminRepository.deleteById(id);
     }
 
     /*       */
@@ -53,7 +53,7 @@ public class AdministratorController {
 
     @GetMapping("/administrators/{id}") // TODO добавил
     public ResponseEntity<Administrator> getAdministratorById(@PathVariable long id) {
-        Optional<Administrator> administrator = administratorRepository.findById(id);
+        Optional<Administrator> administrator = adminRepository.findById(id);
 
         if (administrator.isPresent()) {
             return ResponseEntity.ok(administrator.get());

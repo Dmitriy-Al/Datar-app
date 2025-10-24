@@ -10,6 +10,8 @@ public class Specialist {
     @Id
     private long id;
 
+    private String ownerId;
+
     private String specialistId; // идентификационный номер специалиста
 
     private String profession;
@@ -42,4 +44,9 @@ public class Specialist {
     public String toString() {
         return " < Specialist name: " + name + ", id = " + id + "> ";
     }
+
+    public String receiveShortName() {
+        return surname + "  " +  name.charAt(0) + ". " + patronymic.charAt(0) + ". ";
+    }
+
 }

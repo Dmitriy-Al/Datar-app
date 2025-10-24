@@ -13,7 +13,8 @@ public class Client {
 
     private long tgId;
 
-    private String specialistId;
+    private String ownerId;
+
     private String name;
 
     private String surname;
@@ -22,11 +23,6 @@ public class Client {
 
     @Column(columnDefinition = "varchar(1000000)")
     private String clientNotes; // заметки о клиенте
-
-    private String appointmentDateTime; // время предстоящего приема
-
-    @Column(columnDefinition = "varchar(1000000)")
-    private String appointmentNote; // заметка о том, что предстоит сделать в рамках предстоящего приема
 
     private boolean waitNearAppointment; // отметка о том, что клиент готов перезаписаться на ближайшее свободное время приема (если true)
 
@@ -37,8 +33,6 @@ public class Client {
 
     private String birthdate;
 
-    private String visitDuration;
-
     private String confirmAppointment;
 
     @Override
@@ -46,4 +40,7 @@ public class Client {
         return " < client name: " + name + ", id = " + id + ">\n";
     }
 
+    public String receiveShortName() {
+        return surname + "  " +  name.charAt(0) + ". " + patronymic.charAt(0) + ". ";
+    }
 }

@@ -1,5 +1,6 @@
 package ru.alimovdev.datar.restcontroller;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import ru.alimovdev.datar.model.Client;
@@ -58,7 +59,7 @@ public class ClientController {
     // Поиск специалистов по specialistId (не по ID!)// TODO добавил для поиска элементов по specialistId
     @GetMapping("/clients/by-specialist-id/{specialistId}")
     public List<Client> getClientsBySpecialistId(@PathVariable String specialistId) {
-        return clientRepository.findBySpecialistId(specialistId);
+        return clientRepository.findByOwnerId(specialistId);
     }
 
 
@@ -84,9 +85,8 @@ public class ClientController {
                     // case "patronymic" -> client.setPatronymic((String) value); // Возможна реализация в будущем
                     // case "phoneNumber" -> client.setPhoneNumber((String) value); // Возможна реализация в будущем
                     // case "clientNotes" -> client.setClientNotes((String) value); // Возможна реализация в будущем
-                    case "appointmentDateTime" -> client.setAppointmentDateTime((String) value);
-                    case "appointmentNote" -> client.setAppointmentNote((String) value);
-                    case "visitDuration" -> client.setVisitDuration((String) value);
+                    //  case "appointmentDateTime" -> client.setAppointmentDateTime((String) value);
+                    //  case "appointmentNote" -> client.setAppointmentNote((String) value);
                 }
             });
 
@@ -97,5 +97,16 @@ public class ClientController {
             return ResponseEntity.badRequest().build();
         }
     }
+
+    @GetMapping("/clients/by-owner-id/{ownerId}")// TODO добавил 21.10.2025
+    public ResponseEntity<List<Client>> getClientsByOwnerId(@PathVariable String ownerId) {
+        try {
+            List<Client> clients = clientRepository.findByOwnerId(ownerId);
+            return ResponseEntity.ok(clients);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
 
 }
