@@ -7,8 +7,9 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKe
 import ru.alimovdev.datar.model.Client;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
-
+import java.util.Map;
 
 
 public class TelegramBotMethods {
@@ -75,24 +76,6 @@ public class TelegramBotMethods {
         return inlineKeyboardMarkup;
     }
 
-    // Экранная клавиатура в виде списка произвольной длинны с добавленным текстом для callBackData
-    protected InlineKeyboardMarkup createDataButtonSet(String[] textsForButtons, String callBackData) {
-        InlineKeyboardMarkup inlineKeyboardMarkup = new InlineKeyboardMarkup();
-        List<List<InlineKeyboardButton>> rowsInline = new ArrayList<>(); // коллекция коллекций с горизонтальным рядом кнопок, создаёт вертикальный ряд кнопок
-
-        for (String data : textsForButtons) {
-            List<InlineKeyboardButton> rowInlineButton = new ArrayList<>(); // коллекция с горизонтальным рядом кнопок
-            InlineKeyboardButton button = new InlineKeyboardButton();
-            button.setText(data);
-            button.setCallbackData(callBackData + data);
-            rowInlineButton.add(button);
-            rowsInline.add(rowInlineButton);
-        }
-        inlineKeyboardMarkup.setKeyboard(rowsInline);
-        return inlineKeyboardMarkup;
-    }
-
-
     protected InlineKeyboardMarkup createClientsButtonSet(String dataSymbol, List<Client> clients, String mainMenuData) {
         InlineKeyboardMarkup inlineKeyboardMarkup = new InlineKeyboardMarkup();
         List<List<InlineKeyboardButton>> rowsInline = new ArrayList<>();
@@ -113,9 +96,26 @@ public class TelegramBotMethods {
         return inlineKeyboardMarkup;
     }
 
+    // Экранная клавиатура в виде списка произвольной длинны с добавленным текстом для callBackData
+    protected InlineKeyboardMarkup createDataButtonSet(String[] textsForButtons, String callBackData) {
+        InlineKeyboardMarkup inlineKeyboardMarkup = new InlineKeyboardMarkup();
+        List<List<InlineKeyboardButton>> rowsInline = new ArrayList<>(); // коллекция коллекций с горизонтальным рядом кнопок, создаёт вертикальный ряд кнопок
+
+        for (String data : textsForButtons) {
+            List<InlineKeyboardButton> rowInlineButton = new ArrayList<>(); // коллекция с горизонтальным рядом кнопок
+            InlineKeyboardButton button = new InlineKeyboardButton();
+            button.setText(data);
+            button.setCallbackData(callBackData + data);
+            rowInlineButton.add(button);
+            rowsInline.add(rowInlineButton);
+        }
+        inlineKeyboardMarkup.setKeyboard(rowsInline);
+        return inlineKeyboardMarkup;
+    }
+
 
     // Экранная клавиатура в виде списка произвольной длинны с добавленным текстом для callBackData
-    protected InlineKeyboardMarkup createDataButtonSet(String[] textsForButtons ,String[] textsCallBackData, String callBackDataSymbol) {
+    protected InlineKeyboardMarkup createDataButtonSet(String[] textsForButtons ,String[] textsCallBackData, String callBackDataSymbol) { //TODO Deprecated
         InlineKeyboardMarkup inlineKeyboardMarkup = new InlineKeyboardMarkup();
         List<List<InlineKeyboardButton>> rowsInline = new ArrayList<>(); // коллекция коллекций с горизонтальным рядом кнопок, создаёт вертикальный ряд кнопок
 
@@ -124,6 +124,24 @@ public class TelegramBotMethods {
             InlineKeyboardButton button = new InlineKeyboardButton();
             button.setText(textsForButtons[i]);
             button.setCallbackData(callBackDataSymbol + textsCallBackData[i]);
+            rowInlineButton.add(button);
+            rowsInline.add(rowInlineButton);
+        }
+
+        inlineKeyboardMarkup.setKeyboard(rowsInline);
+        return inlineKeyboardMarkup;
+    }
+
+    // Экранная клавиатура в виде списка произвольной длинны с добавленным текстом для callBackData
+    protected InlineKeyboardMarkup createDataButtonSet(Map<String, String> dataButtonSet, String callBackDataSymbol) {
+        InlineKeyboardMarkup inlineKeyboardMarkup = new InlineKeyboardMarkup();
+        List<List<InlineKeyboardButton>> rowsInline = new ArrayList<>(); // коллекция коллекций с горизонтальным рядом кнопок, создаёт вертикальный ряд кнопок
+
+        for (Map.Entry<String, String> data : dataButtonSet.entrySet()) {
+            List<InlineKeyboardButton> rowInlineButton = new ArrayList<>(); // коллекция с горизонтальным рядом кнопок
+            InlineKeyboardButton button = new InlineKeyboardButton();
+            button.setText(data.getKey());
+            button.setCallbackData(callBackDataSymbol + data.getValue());
             rowInlineButton.add(button);
             rowsInline.add(rowInlineButton);
         }
@@ -146,7 +164,7 @@ public class TelegramBotMethods {
         return editMessageText;
     }
 
-    protected EditMessageText createSpecListMenu(long longChatId, long messageId, String textForMessage, String[] textsForButtons, String[] textsCallBackData, String callBackDataSymbol) {
+    protected EditMessageText createSpcListMenu(long longChatId, long messageId, String textForMessage, String[] textsForButtons, String[] textsCallBackData, String callBackDataSymbol) {
         EditMessageText editMessageText = createEditMessageText(longChatId, messageId, textForMessage);
         editMessageText.setReplyMarkup(createDataButtonSet(textsForButtons, textsCallBackData, callBackDataSymbol));
         return editMessageText;

@@ -31,6 +31,8 @@ public class Administrator {
 
     private boolean isOwner;
 
+    private String workTimeLength; // рабочий день
+
     @Override
     public String toString() {
         return " < Administrator name: " + name + ", id = " + id + "> ";

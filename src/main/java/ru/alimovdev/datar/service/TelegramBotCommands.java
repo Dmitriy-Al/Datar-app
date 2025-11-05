@@ -21,26 +21,33 @@ import ru.alimovdev.datar.config.AppConfig;
 import ru.alimovdev.datar.model.*;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
+import java.util.*;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+import static java.time.temporal.ChronoUnit.DAYS;
+import static ru.alimovdev.datar.service.ScheduleType.*;
 
 
 @Slf4j
 @Component
 public class TelegramBotCommands extends TelegramLongPollingBot {
+    private final AppointmentRepository appointmentRepository;
 
     private final TelegramBotMethods botMethod = new TelegramBotMethods();
 
 
     private final HashMap<String, String> tempData = new HashMap<>();
-    private final HashMap<String, Long> savedId = new HashMap<>();
+    private final HashMap<String, Long> savedClientId = new HashMap<>();
     private final HashMap<String, String> inputtedName = new HashMap<>();
     private final HashMap<String, String> inputtedSurname = new HashMap<>();
     private final HashMap<String, String> inputtedPatronymic = new HashMap<>();
     private final HashMap<String, String> returnData = new HashMap<>();
     private final HashMap<String, String> registerPassword = new HashMap<>();
+    private final HashMap<String, String> savedWorkSchedule = new HashMap<>();
     private final HashMap<String, Integer> savedMessageId = new HashMap<>();
     private final HashMap<String, String> inputtedPhoneNumber = new HashMap<>();
     private final HashMap<String, String> inputtedClientBirthdate = new HashMap<>();
@@ -87,13 +94,32 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
     private final String input_client_phoneNumber = "INPUT_CLIENT_PHONE"; //
     private final String input_client_birthdate = "INPUT_CLIENT_BIRTHDATE"; //
 
-    final String back = "⏎ Назад в меню";
-    final String specIdDataSymbol = "IDSP";
-    final String clientIdDataSymbol = "IDCL";
-    final String clientFirstSymbol = "SURSYM";
-    final String clientIdTeg = "CLIID";
+
+    final String backTag = "⏎ Назад в меню";
+    final String specIdDataTag = "SID";
+    final String clientFirstTag = "SYM";
+    final String clientIdTag = "CLD";
+    final String chooseDateTag = "CHM";
+    final String chooseBeginTag = "CBT";
+    final String chooseEndTag = "CET";
+    final String beginWorkTag = "SBW";
+    final String endWorkTag = "SEW";
+    final String beginWeekWorkTag = "BWW";
+    final String endWeekWorkTag = "EWW";
+    final String beginDayWorkTag = "BDW";
+    final String endDayWorkTag = "EDW";
+    final String weekDayTag = "WDT";
+    final String chooseWeekDayTag = "CWD";
+    final String beginHourTag = "BHT";
+    final String endHourTag = "EHT";
+    final String scheduleTag = "SHT";
+    final String chooseWeekendTag = "CWT";
+
+
     final static String callData_clientsList = "CLILIST";
 
+    private final String[] textsOwnerAdminSettings = {"Часы работы", "Расписание специалиста", botMethod.callData_backToAdminMenu};
+    private final String[] textsOwnerSpecSettings = {"Часы работы", "Расписание", botMethod.callData_backToSpecMenu};
     private final String[] textsForSpecButtons = {"Записать на прием", "Добавить нового клиента", "Посмотреть запись", "Работа с базой клиентов", botMethod.callData_specSettings};
     private final String[] textsForAdminButtons = {"Выбор специалиста", "Записать на прием", "Добавить нового клиента", "Посмотреть запись", "Работа с базой клиентов", botMethod.callData_adminSettings};
 
@@ -108,7 +134,7 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
     private UserRepository userRepository;
 
 
-    public TelegramBotCommands() {
+    public TelegramBotCommands(AppointmentRepository appointmentRepository) {
         super(AppConfig.botToken);
 
         /** Меню команд бота */
@@ -122,6 +148,7 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
         } catch (TelegramApiException e) {
             log.error("Error bot's command list" + e.getMessage());
         }
+        this.appointmentRepository = appointmentRepository;
     }
 
     @Override
@@ -188,13 +215,15 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
             // Удаление отправленных в чат сообщений (чтобы не засорять экран чата)
             executeDeleteMessage(new DeleteMessage(stringChatId, intMessageId));
 
-            if (messageText.equals("/start")) { // клавиатура
+            if (messageText.equals("3") || messageText.equals("/start")) { // клавиатура
                 tempData.put(stringChatId, "");
                 savedMessageId.put(stringChatId, intMessageId);
                 if (adminRepository.existsById(longChatId)) {
-                    executeSendMessage(botMethod.createSpecialistMenu(stringChatId, "Меню администратора", textsForAdminButtons));
+                    String textForMenu = createTextForMenu(longChatId, stringChatId);
+                    executeSendMessage(botMethod.createSpecialistMenu(stringChatId, textForMenu, textsForAdminButtons));
                 } else if (specialistRepository.existsById(longChatId)) {
-                    executeSendMessage(botMethod.createSpecialistMenu(stringChatId, "Меню специалиста", textsForSpecButtons));
+                    String textForMenu = createTextForMenu(longChatId, stringChatId);
+                    executeSendMessage(botMethod.createSpecialistMenu(stringChatId, textForMenu, textsForSpecButtons));
                 } else if (userRepository.existsById(longChatId)) {
                     executeSendMessage(botMethod.createUserMenu(stringChatId, textToUser));
                 } else {
@@ -232,139 +261,618 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
 
             } else if (callbackData.equals(botMethod.callData_userAppointment)) {
                 EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, "У тебя нет записи, нищеброд...");
-                editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(back, botMethod.callData_backToUserMenu));
+                editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(backTag, botMethod.callData_backToUserMenu));
                 executeEditMessageText(editMessageText);
 
 
             } else if (callbackData.equals(botMethod.callData_regAsSpecialist)) {
                 EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, "Введите вашу фамилию и отправьте сообщение в чат");
-                editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(back, botMethod.callData_backToUserMenu));
+                editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(backTag, botMethod.callData_backToUserMenu));
                 executeEditMessageText(editMessageText);
                 tempData.put(stringChatId, input_spec_surname); // Регистрация специалиста
 
             } else if (callbackData.equals(botMethod.callData_regAsAdmin)) {
                 EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, "Введите вашу фамилию и отправьте сообщение в чат");
-                editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(back, botMethod.callData_backToUserMenu));
+                editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(backTag, botMethod.callData_backToUserMenu));
                 executeEditMessageText(editMessageText);
                 tempData.put(stringChatId, input_admin_surname); // Регистрация администратора
 
             } else if (callbackData.equals(botMethod.callData_backToAdminMenu)) {
-                executeEditMessageText(botMethod.createSpecialistMenu(longChatId, messageId, "Меню  администратора", textsForAdminButtons));
+                String textForMenu = createTextForMenu(longChatId, stringChatId);
+                executeEditMessageText(botMethod.createSpecialistMenu(longChatId, messageId, textForMenu, textsForAdminButtons));
             } else if (callbackData.equals(botMethod.callData_backToSpecMenu)) {
-                executeEditMessageText(botMethod.createSpecialistMenu(longChatId, messageId, "Меню специалиста", textsForSpecButtons));
+                String textForMenu = createTextForMenu(longChatId, stringChatId);
+                executeEditMessageText(botMethod.createSpecialistMenu(longChatId, messageId, textForMenu, textsForSpecButtons));
             } else if (callbackData.equals("Добавить нового клиента")) {
                 createNewClientProcess(longChatId, stringChatId, messageId);
             } else if (callbackData.equals("Выбор специалиста")) {
-                String[] idList = adminRepository.findById(longChatId).get().getSpecialistIdList().split("/");
-                int length = idList.length;
-                if (length > 0) {
+
+                String specialistIdList = adminRepository.findById(longChatId).get().getSpecialistIdList();
+                if (!specialistIdList.isEmpty()) { // 777/333/111/
+                    String[] idList = specialistIdList.split("/");
+                    int length = idList.length;
                     String[] textsForButtons = new String[length];
                     String[] textsCallBackData = new String[length];
-
                     for (int i = 0; i < idList.length; i++) {
                         String name = specialistRepository.findById(Long.parseLong(idList[i])).get().receiveShortName();
                         textsForButtons[i] = name;
                         textsCallBackData[i] = idList[i];
                     }
-                    executeEditMessageText(botMethod.createSpecListMenu(longChatId, messageId, "Выберите Специалиста", textsForButtons, textsCallBackData, specIdDataSymbol));
+                    executeEditMessageText(botMethod.createSpcListMenu(longChatId, messageId, "Выберите Специалиста", textsForButtons, textsCallBackData, specIdDataTag));
+                } else {
+                    EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, "У вас нет специалистов");
+                    editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(backTag, botMethod.callData_backToAdminMenu));
+                    executeEditMessageText(editMessageText);
                 }
-                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, "У вас нет специалистов");
-                editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(back, botMethod.callData_backToAdminMenu));
 
-            } else if (callbackData.contains(specIdDataSymbol)) {
-                String data = callbackData.replace(specIdDataSymbol, "");
+            } else if (callbackData.contains(specIdDataTag)) {
+                String data = callbackData.replace(specIdDataTag, "");
                 String name = specialistRepository.findById(Long.parseLong(data)).get().receiveShortName();
                 Administrator administrator = adminRepository.findById(longChatId).get();
                 administrator.setCurrentSpecialistId(data);
                 adminRepository.save(administrator);
                 EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, "Выбран специалист " + name);
-                editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(back, botMethod.callData_backToAdminMenu));
+                editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(backTag, botMethod.callData_backToAdminMenu));
                 executeEditMessageText(editMessageText);
             } else if (callbackData.equals("Посмотреть запись")) {
                 Iterable<Client> clients = clientRepository.findAll();
                 EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, "Список клиентуры:\n" + clients);
-                editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(back, botMethod.callData_backToAdminMenu));
+                editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(backTag, botMethod.callData_backToAdminMenu));
                 executeEditMessageText(editMessageText);
             } else if (callbackData.equals("Записать на прием")) {
                 String mainMenuData = adminRepository.existsById(longChatId) ? botMethod.callData_backToAdminMenu : botMethod.callData_backToSpecMenu;
                 String textForMessage = receiveTextForMessage(longChatId, stringChatId, "Выберите первую букву фамилии клиента");
-                executeEditMessageText(botMethod.searchClient(longChatId, messageId, textForMessage, clientFirstSymbol, mainMenuData));
+                executeEditMessageText(botMethod.searchClient(longChatId, messageId, textForMessage, clientFirstTag, mainMenuData));
 
             } else if (callbackData.equals(callData_clientsList)) {
                 showAllClients(longChatId, messageId, stringChatId);
 
-            } else if (callbackData.contains(clientFirstSymbol)) {
-                String dataText = callbackData.replace(clientFirstSymbol, "");
+            } else if (callbackData.contains(clientFirstTag)) {
+                String dataText = callbackData.replace(clientFirstTag, "");
                 executeEditMessageText(receiveClientsSet(longChatId, messageId, dataText, "Выберите клиента из списка"));
 
-            } else if (callbackData.contains(clientIdTeg)) {
-                String clientId = callbackData.replace(clientIdDataSymbol, "");
-                Client client = clientRepository.findById(Long.parseLong(clientIdDataSymbol)).get();
-                EditMessageText editMessageText = new EditMessageText();
+                // Выбор даты для записи клиента
+            } else if (callbackData.contains(clientIdTag)) {
+                long clientId = savedClientId.get(stringChatId) == null ?
+                        Long.parseLong(callbackData.replace(clientIdTag, "")) : savedClientId.get(stringChatId);
+                savedClientId.put(stringChatId, clientId);
+                Client client = clientRepository.findById(clientId).get();
+                String mainMenuData = adminRepository.existsById(longChatId) ? botMethod.callData_backToAdminMenu : botMethod.callData_backToSpecMenu;
+                String textForMessage = "Выберите дату для записи клиента " + client.receiveShortName();
                 LocalDate date = LocalDate.now();
-                DateTimeFormatter numFormat = DateTimeFormatter.ofPattern("MM");
-                DateTimeFormatter buttonFormat = DateTimeFormatter.ofPattern("MM.yyyy");
-                DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd.MM.yyyy");
+                DateTimeFormatter format = DateTimeFormatter.ofPattern("d MMM");
+                DateTimeFormatter formatYear = DateTimeFormatter.ofPattern("dd.MM.yyyy");
+                int count = 0;
+                InlineKeyboardMarkup inlineKeyboardMarkup = new InlineKeyboardMarkup();
+                List<List<InlineKeyboardButton>> rowsInline = new ArrayList<>(); // коллекция коллекций с горизонтальным рядом кнопок, создаёт вертикальный ряд кнопок
+                List<InlineKeyboardButton> rowInlineButtonBack = new ArrayList<>();
+                for (int i = 0; i < 15; i++) {
+                    List<InlineKeyboardButton> rowInlineButton = new ArrayList<>();
+                    for (int x = 0; x < 4; x++) {
+                        InlineKeyboardButton button = new InlineKeyboardButton(format.format(date.plus(count, DAYS)));
+                        button.setCallbackData(chooseDateTag + formatYear.format(date.plus(count, DAYS)));
+                        rowInlineButton.add(button);
+                        count++;
+                    }
+                    rowsInline.add(rowInlineButton);
+                }
+                InlineKeyboardButton button = new InlineKeyboardButton(mainMenuData);
+                button.setCallbackData(mainMenuData);
+                rowInlineButtonBack.add(button);
+                rowsInline.add(rowInlineButtonBack);
+                inlineKeyboardMarkup.setKeyboard(rowsInline);
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, textForMessage);
+                editMessageText.setReplyMarkup(inlineKeyboardMarkup);
+                executeEditMessageText(editMessageText);
 
-                String nameSymbol = callbackData.replace(clientFirstSymbol, "");
-                String callData;
+                // Выбор даты для записи клиента
+            } else if (callbackData.contains(chooseDateTag)) {
+                String date = callbackData.replace(chooseDateTag, "");
+                String mainMenuData;
                 String textForMessage;
+                DateTimeFormatter formatYear = DateTimeFormatter.ofPattern("dd.MM.yyyy");
+                DateTimeFormatter formatHour = DateTimeFormatter.ofPattern("k");
+                boolean isToday = formatYear.format(LocalDate.now()).equals(date);
+
                 if (adminRepository.existsById(longChatId)) {
-                    callData = botMethod.callData_backToAdminMenu;
-                    long specialistId = Long.parseLong(adminRepository.findById(longChatId).get().getCurrentSpecialistId());
-                    String name = specialistRepository.findById(specialistId).get().receiveShortName();
-                    textForMessage = "Вы выбираете клиента для специалиста " + name + ". Выберите первую букву фамилии клиента";
+                    mainMenuData = botMethod.callData_backToAdminMenu;
+                    Administrator administrator = adminRepository.findById(longChatId).get();
+                    textForMessage = createAppointmentText(administrator.getCurrentSpecialistId(), date);
                 } else {
-                    callData = botMethod.callData_backToSpecMenu;
-                    textForMessage = "Выберите первую букву фамилии клиента";
+                    mainMenuData = botMethod.callData_backToSpecMenu;
+                    textForMessage = createAppointmentText(stringChatId, date);
+                }
+                textForMessage += "\nВыберите время для записи:";
+                InlineKeyboardMarkup inlineKeyboardMarkup = new InlineKeyboardMarkup();
+                List<List<InlineKeyboardButton>> rowsInline = new ArrayList<>(); // коллекция коллекций с горизонтальным рядом кнопок, создаёт вертикальный ряд кнопок
+                List<InlineKeyboardButton> rowInlineButtonBack = new ArrayList<>();
+                int beginHour = isToday ? Integer.parseInt(formatHour.format(LocalTime.now())) + 1 : 8;
+                int endHour = 22;
+
+                for (int i = beginHour; i <= endHour - 1; i++) {
+                    List<InlineKeyboardButton> rowInlineButton = new ArrayList<>();
+                    for (int x = 0; x < 60; x += 10) {
+                        String hour = i > 9 ? String.valueOf(i) : "0" + i;
+                        String minute = x > 0 ? String.valueOf(x) : "0" + x;
+                        InlineKeyboardButton button = new InlineKeyboardButton(i + ":" + minute);
+                        button.setCallbackData(chooseBeginTag + date + " - " + hour + ":" + minute);
+                        rowInlineButton.add(button);
+                    }
+                    rowsInline.add(rowInlineButton);
+                }
+                InlineKeyboardButton menuButton = new InlineKeyboardButton(mainMenuData);
+                menuButton.setCallbackData(mainMenuData);
+                rowInlineButtonBack.add(menuButton);
+                InlineKeyboardButton backButton = new InlineKeyboardButton("Назад");
+                backButton.setCallbackData(clientIdTag);
+                rowInlineButtonBack.add(backButton);
+                rowsInline.add(rowInlineButtonBack);
+                inlineKeyboardMarkup.setKeyboard(rowsInline);
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, textForMessage);
+                editMessageText.setReplyMarkup(inlineKeyboardMarkup);
+                executeEditMessageText(editMessageText);
+
+            } else if (callbackData.contains(chooseBeginTag)) {
+                String time = callbackData.replace(chooseBeginTag, ""); // 26.10.2025 - 09:00
+                String mainMenuData = adminRepository.existsById(longChatId) ? botMethod.callData_backToAdminMenu : botMethod.callData_backToSpecMenu;
+                String textForMessage = "Выберите время окончания " + time;
+                String[] hourAndMinute = time.split(" - ")[1].split(":");
+                int beginHour = Integer.parseInt(hourAndMinute[0]);
+                int beginMinute = Integer.parseInt(hourAndMinute[1]);
+                int endHour = 22;
+
+                if (beginMinute == 50) {
+                    beginMinute = 0;
+                    beginHour += 1;
+                } else {
+                    beginMinute += 10;
                 }
 
+                InlineKeyboardMarkup inlineKeyboardMarkup = new InlineKeyboardMarkup();
+                List<List<InlineKeyboardButton>> rowsInline = new ArrayList<>(); // коллекция коллекций с горизонтальным рядом кнопок, создаёт вертикальный ряд кнопок
+                List<InlineKeyboardButton> rowInlineButtonBack = new ArrayList<>();
+
+                for (int i = beginHour; i <= endHour - 1; i++) {
+                    List<InlineKeyboardButton> rowInlineButton = new ArrayList<>();
+                    for (int x = beginMinute; x < 60; x += 10) {
+                        String hour = i > 9 ? String.valueOf(i) : "0" + i;
+                        String minute = x > 0 ? String.valueOf(x) : "0" + x;
+                        InlineKeyboardButton button = new InlineKeyboardButton(i + ":" + minute);
+                        button.setCallbackData(chooseEndTag + time + "/" + hour + ":" + minute);
+                        rowInlineButton.add(button);
+                    }
+                    beginMinute = 0;
+                    rowsInline.add(rowInlineButton);
+                }
+                InlineKeyboardButton menuButton = new InlineKeyboardButton(mainMenuData);
+                menuButton.setCallbackData(mainMenuData);
+                rowInlineButtonBack.add(menuButton);
+                InlineKeyboardButton backButton = new InlineKeyboardButton("Назад");
+                backButton.setCallbackData(chooseDateTag + (time.split(" - ")[0]));
+                rowInlineButtonBack.add(backButton);
+                rowsInline.add(rowInlineButtonBack);
+                inlineKeyboardMarkup.setKeyboard(rowsInline);
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, textForMessage);
+                editMessageText.setReplyMarkup(inlineKeyboardMarkup);
+                executeEditMessageText(editMessageText);
+
+            } else if (callbackData.contains(chooseEndTag)) {
+                String timeData = callbackData.replace(chooseEndTag, ""); // 26.10.2025 - 09:00/09:10
+                Client client = clientRepository.findById(savedClientId.get(stringChatId)).get();
+                List<Appointment> appointments;
+                String existAppointmentTime = "";
+                boolean isWrongAppointment = false;
+
+                DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd.MM.yyyy - HH:mm");
+                String[] splitTimeData = timeData.split(" - ");
+                String date = splitTimeData[0]; //  26.10.2025
+                LocalDateTime beginTime = LocalDateTime.parse(date + " - " + splitTimeData[1].split("/")[0], formatter); //09:00
+                LocalDateTime endTime = LocalDateTime.parse(date + " - " + splitTimeData[1].split("/")[1], formatter); //09:10
+
+                if (adminRepository.existsById(longChatId)) {
+                    String specialistId = adminRepository.findById(longChatId).get().getCurrentSpecialistId();
+                    appointments = appointmentRepository.findBySpecialistId(specialistId);
+
+                } else {
+                    appointments = appointmentRepository.findBySpecialistId(stringChatId);
+                }
+                appointments.addAll(appointmentRepository.findByClientId(client.getId()));
+
+                for (Appointment ap : appointments) {
+                    // String[] splitAppointmentTimeData = ap.getAppointmentDateTime().replace("#", "").split(" - ");
+                    String[] splitAppointmentTimeData = ap.getAppointmentDateTime().split(" - ");
+                    String appointmentDate = splitAppointmentTimeData[0]; //  26.10.2025
+                    LocalDateTime appointmentBeginTime = LocalDateTime.parse(appointmentDate + " - " + splitAppointmentTimeData[1].split("/")[0], formatter); //09:00
+                    LocalDateTime appointmentEndTime = LocalDateTime.parse(appointmentDate + " - " + splitAppointmentTimeData[1].split("/")[1], formatter); //09:10
+
+                    if (beginTime.isAfter(appointmentBeginTime) && beginTime.isBefore(appointmentEndTime) ||
+                            endTime.isAfter(appointmentBeginTime) && endTime.isBefore(appointmentEndTime) ||
+                            beginTime.isBefore(appointmentBeginTime) && endTime.isAfter(appointmentEndTime)) {
+                        existAppointmentTime = appointmentDate + " - " + splitAppointmentTimeData[1].split("/")[0];
+                        isWrongAppointment = true;
+                        break;
+                    }
+                }
+
+                String textForMessage = "Клиент записан на " + timeData;
+                String mainMenuData = adminRepository.existsById(longChatId) ? botMethod.callData_backToAdminMenu : botMethod.callData_backToSpecMenu;
+                Appointment appointment = new Appointment();
+                if (specialistRepository.existsById(longChatId)) {
+                    Specialist specialist1 = specialistRepository.findById(longChatId).get();
+                    appointment.setOwnerId(specialist1.getOwnerId());
+                    appointment.setSpecialistId(stringChatId);
+                } else {
+                    Administrator administrator = adminRepository.findById(longChatId).get();
+                    appointment.setOwnerId(administrator.getOwnerId());
+                    appointment.setSpecialistId(administrator.getCurrentSpecialistId());
+                }
+                appointment.setClientId(savedClientId.get(stringChatId));
+                appointment.setAppointmentNote("");
+                //  appointment.setAppointmentDateTime(timeData + "#"); // 26.10.2025 - 09:00/09:10#
+                appointment.setAppointmentDateTime(timeData); // 26.10.2025 - 09:00/09:10
+
+                InlineKeyboardMarkup inlineKeyboardMarkup = new InlineKeyboardMarkup();
+                List<List<InlineKeyboardButton>> rowsInline = new ArrayList<>(); // коллекция коллекций с горизонтальным рядом кнопок, создаёт вертикальный ряд кнопок
+                List<InlineKeyboardButton> firstRowInlineButton = new ArrayList<>();
+
+                InlineKeyboardButton menuButton = new InlineKeyboardButton(mainMenuData);
+                menuButton.setCallbackData(mainMenuData);
+                firstRowInlineButton.add(menuButton);
+
+                if (isWrongAppointment) {
+                    textForMessage = "Нельзя записать клиента на данную дату, т.к. у клиента или специалиста уже имеется запись на время: " + existAppointmentTime;
+                    InlineKeyboardButton backButton = new InlineKeyboardButton("Назад");
+                    backButton.setCallbackData(chooseBeginTag + date + " - " + splitTimeData[1].split("/")[0]);
+                    firstRowInlineButton.add(backButton);
+                } else {
+                    appointmentRepository.save(appointment);
+                }
+                rowsInline.add(firstRowInlineButton);
+                inlineKeyboardMarkup.setKeyboard(rowsInline);
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, textForMessage);
+                editMessageText.setReplyMarkup(inlineKeyboardMarkup);
+                executeEditMessageText(editMessageText);
+
+            } else if (callbackData.equals(botMethod.callData_specSettings)) {
+                executeEditMessageText(botMethod.createSpecialistMenu(longChatId, messageId, "Настройки специалиста", textsOwnerSpecSettings));
 
 
-            /*
+            } else if (callbackData.equals(botMethod.callData_adminSettings)) {
+                executeEditMessageText(botMethod.createSpecialistMenu(longChatId, messageId, "Настройки администратора", textsOwnerAdminSettings));
 
-                val inlineKeyboardMarkup = InlineKeyboardMarkup()
-                val rowsInline = ArrayList<List<InlineKeyboardButton>>()
-                val firstRowInlineButton = ArrayList<InlineKeyboardButton>()
+            } else if (callbackData.equals("Часы работы")) {
+                String workTime;
+                String backData;
 
-                val firstButton = InlineKeyboardButton()
-                firstButton.putData(buttonFormat.format(date), "${numFormat.format(date)}$callData_appointmentDay$clientId")
-                firstRowInlineButton.add(firstButton)
+                if (adminRepository.existsById(longChatId)) {
+                    Administrator administrator = adminRepository.findById(longChatId).get();
+                    backData = botMethod.callData_adminSettings;
+                    workTime = administrator.getWorkTimeLength().replace("/", ":00 до ");
+                    ;
+                } else {
+                    Specialist specialist = specialistRepository.findById(longChatId).get();
+                    backData = botMethod.callData_specSettings;
+                    workTime = specialist.getWorkTimeLength().replace("/", ":00 до ");
+                }
 
-                val secondButton = InlineKeyboardButton()
-                secondButton.putData(buttonFormat.format(date.plusMonths(1)), "${numFormat.
-                        format(date.plusMonths(1))}$callData_appointmentDay$clientId")
-            firstRowInlineButton.add(secondButton)
+                String textForMessage = "Установленные часы работы: с " + workTime + ":00 ч.\nВыберите новое время начала рабочего дня.";
+                InlineKeyboardMarkup inlineKeyboardMarkup = new InlineKeyboardMarkup();
+                List<List<InlineKeyboardButton>> rowsInline = beginWorkTime(beginWorkTag);
+                List<InlineKeyboardButton> rowInlineButtonBack = new ArrayList<>();
+                InlineKeyboardButton backButton = new InlineKeyboardButton("Назад");
+                backButton.setCallbackData(backData);
+                rowInlineButtonBack.add(backButton);
+                rowsInline.add(rowInlineButtonBack);
+                inlineKeyboardMarkup.setKeyboard(rowsInline);
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, textForMessage);
+                editMessageText.setReplyMarkup(inlineKeyboardMarkup);
+                executeEditMessageText(editMessageText);
 
-            val thirdButton = InlineKeyboardButton()
-            thirdButton.putData(buttonFormat.format(date.plusMonths(2)), "${numFormat.
-                    format(date.plusMonths(2))}$callData_appointmentDay$clientId")
-        firstRowInlineButton.add(thirdButton)
+            } else if (callbackData.contains(beginWorkTag)) {
+                int time = Integer.parseInt(callbackData.replace(beginWorkTag, ""));
+                String textForMessage = "Выберите время окончания рабочего дня";
+                InlineKeyboardMarkup inlineKeyboardMarkup = new InlineKeyboardMarkup();
+                List<List<InlineKeyboardButton>> rowsInline = endWorkTime(time, endWorkTag);
+                List<InlineKeyboardButton> rowInlineButtonBack = new ArrayList<>();
+                InlineKeyboardButton backButton = new InlineKeyboardButton("Назад");
+                backButton.setCallbackData("Часы работы");
+                rowInlineButtonBack.add(backButton);
+                rowsInline.add(rowInlineButtonBack);
+                inlineKeyboardMarkup.setKeyboard(rowsInline);
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, textForMessage);
+                editMessageText.setReplyMarkup(inlineKeyboardMarkup);
+                executeEditMessageText(editMessageText);
 
-        val secondRowInlineButton = ArrayList<InlineKeyboardButton>()
-        val returnButton = InlineKeyboardButton()
-        returnButton.putData(text_cancelButton, callData_backToMenu)
-        secondRowInlineButton.add(returnButton)
+            } else if (callbackData.contains(endWorkTag)) {
+                String date = callbackData.replace(endWorkTag, "");
+                String backData;
 
-        rowsInline.add(firstRowInlineButton)
-        rowsInline.add(secondRowInlineButton)
-        inlineKeyboardMarkup.keyboard = rowsInline
+                if (adminRepository.existsById(longChatId)) {
+                    backData = botMethod.callData_adminSettings;
+                    Administrator administrator = adminRepository.findById(longChatId).get();
+                    administrator.setWorkTimeLength(date);
+                    adminRepository.save(administrator);
+                } else {
+                    backData = botMethod.callData_specSettings;
+                    Specialist specialist = specialistRepository.findById(longChatId).get();
+                    specialist.setWorkTimeLength(date);
+                    specialistRepository.save(specialist);
+                }
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, "Время работы установлено.");
+                InlineKeyboardMarkup inlineKeyboardMarkup = botMethod.receiveOneButtonMenu("Назад", backData);
+                editMessageText.setReplyMarkup(inlineKeyboardMarkup);
+                executeEditMessageText(editMessageText);
 
-        editMessageText.replyMarkup = inlineKeyboardMarkup
+            } else if (callbackData.equals("Расписание специалиста")) {
+                String text;
+                String specialistId = adminRepository.findById(longChatId).get().getCurrentSpecialistId();
+                InlineKeyboardMarkup inlineKeyboardMarkup;
 
-        val textForMessage: String = if (client.appointmentDate.length == 10 && LocalDate.now().
-                isBefore(LocalDate.parse(client.appointmentDate))) {
-            "$text_cliAppointmentOne${formatter.format(LocalDate.parse(client.appointmentDate))} в " +
-                    "${client.appointmentTime}$text_cliAppointmentTwo"
-        } else {
-            text_chooseMonth
-        }
-        editMessageText.putData(stringChatId, intMessageId, textForMessage)
-        return editMessageText
+                if (specialistId != null) {
+                    text = "Здесь вы можете установить график работы для специалиста: " + specialistRepository.findById(Long.parseLong(specialistId)).get().receiveShortName();
+                    String[] textsOwnerAdminSettings = {"Фиксированный график", "Четный/нечетный график", "Скользящий график", botMethod.callData_backToAdminMenu};
+                    inlineKeyboardMarkup = botMethod.createButtonSet(textsOwnerAdminSettings);
+                } else {
+                    text = "Специалист не выбран.";
+                    inlineKeyboardMarkup = botMethod.receiveOneButtonMenu("Назад", botMethod.callData_adminSettings);
+                }
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, text);
+                editMessageText.setReplyMarkup(inlineKeyboardMarkup);
+                executeEditMessageText(editMessageText);
 
-             */
+            } else if (callbackData.equals("Фиксированный график")) {
+                savedWorkSchedule.remove(stringChatId);
+                String specialistId = adminRepository.findById(longChatId).get().getCurrentSpecialistId();
+                InlineKeyboardMarkup inlineKeyboardMarkup = new InlineKeyboardMarkup();
+                Specialist specialist = specialistRepository.findById(Long.parseLong(specialistId)).get();
+                String text = "Специалист: " + specialist.receiveShortName() + "\nАктуальный график:\n" + FIX_DAYS.receiveScheduleString(specialist.getReceptionSchedule()) + "\nУстановите часы работы  для каждого дня недели. Для установки выходных дней нажмите клавишу \"Выходной день\".\nВыберите время начала рабочего дня для понедельника.";
+                List<List<InlineKeyboardButton>> rowsInline = createBeginScheduleButtonsSet();
+                inlineKeyboardMarkup.setKeyboard(rowsInline);
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, text);
+                editMessageText.setReplyMarkup(inlineKeyboardMarkup);
+                executeEditMessageText(editMessageText);
 
-            } // TODO
+            } else if (callbackData.contains(beginWeekWorkTag)) {
+                String time = callbackData.replace(beginWeekWorkTag, "");
+                String savedScheduleTime = "";
+                String[] scheduleTime = savedWorkSchedule.get(stringChatId) == null ? new String[0] : savedWorkSchedule.get(stringChatId).split("/");
+                InlineKeyboardMarkup inlineKeyboardMarkup = new InlineKeyboardMarkup();
+                String text = "";
+
+                if (time.isEmpty()) {
+                    text = savedScheduleTime + " Выберите время окончания рабочего дня для понедельника.";
+                    List<List<InlineKeyboardButton>> rowsInline = createBeginScheduleButtonsSet();
+                    inlineKeyboardMarkup.setKeyboard(rowsInline);
+                } else if (scheduleTime.length == 0) {
+                    savedWorkSchedule.put(stringChatId, time + "/");
+                    text = FIX_DAYS.receiveScheduleString(savedWorkSchedule.get(stringChatId) + FIX_DAYS.getLabel()) + "\nВыберите время начала рабочего дня для вторника.";
+                    List<List<InlineKeyboardButton>> rowsInline = createBeginScheduleButtonsSet();
+                    inlineKeyboardMarkup.setKeyboard(rowsInline);
+                } else if (scheduleTime.length == 1) {
+                    savedScheduleTime = savedWorkSchedule.get(stringChatId);
+                    savedWorkSchedule.put(stringChatId, savedScheduleTime + time + "/");
+                    text = FIX_DAYS.receiveScheduleString(savedWorkSchedule.get(stringChatId) + FIX_DAYS.getLabel()) + "\nВыберите время начала рабочего дня для среды.";
+                    List<List<InlineKeyboardButton>> rowsInline = createBeginScheduleButtonsSet();
+                    inlineKeyboardMarkup.setKeyboard(rowsInline);
+                } else if (scheduleTime.length == 2) {
+                    savedScheduleTime = savedWorkSchedule.get(stringChatId);
+                    savedWorkSchedule.put(stringChatId, savedScheduleTime + time + "/");
+                    text = FIX_DAYS.receiveScheduleString(savedWorkSchedule.get(stringChatId) + FIX_DAYS.getLabel()) + "\nВыберите время начала рабочего дня для четверга.";
+                    List<List<InlineKeyboardButton>> rowsInline = createBeginScheduleButtonsSet();
+                    inlineKeyboardMarkup.setKeyboard(rowsInline);
+                } else if (scheduleTime.length == 3) {
+                    savedScheduleTime = savedWorkSchedule.get(stringChatId);
+                    savedWorkSchedule.put(stringChatId, savedScheduleTime + time + "/");
+                    text = FIX_DAYS.receiveScheduleString(savedWorkSchedule.get(stringChatId) + FIX_DAYS.getLabel()) + "\nВыберите время начала рабочего дня для пятницы.";
+                    List<List<InlineKeyboardButton>> rowsInline = createBeginScheduleButtonsSet();
+                    inlineKeyboardMarkup.setKeyboard(rowsInline);
+                } else if (scheduleTime.length == 4) {
+                    savedScheduleTime = savedWorkSchedule.get(stringChatId);
+                    savedWorkSchedule.put(stringChatId, savedScheduleTime + time + "/");
+                    text = FIX_DAYS.receiveScheduleString(savedWorkSchedule.get(stringChatId) + FIX_DAYS.getLabel()) + "\nВыберите время начала рабочего дня для субботы.";
+                    List<List<InlineKeyboardButton>> rowsInline = createBeginScheduleButtonsSet();
+                    inlineKeyboardMarkup.setKeyboard(rowsInline);
+                } else if (scheduleTime.length == 5) {
+                    savedScheduleTime = savedWorkSchedule.get(stringChatId);
+                    savedWorkSchedule.put(stringChatId, savedScheduleTime + time + "/");
+                    text = FIX_DAYS.receiveScheduleString(savedWorkSchedule.get(stringChatId) + FIX_DAYS.getLabel()) + "\nВыберите время начала рабочего дня для воскресенья.";
+                    List<List<InlineKeyboardButton>> rowsInline = createBeginScheduleButtonsSet();
+                    inlineKeyboardMarkup.setKeyboard(rowsInline);
+                } else if (scheduleTime.length == 6) {
+                    savedScheduleTime = savedWorkSchedule.get(stringChatId) + time + FIX_DAYS.getLabel();
+                    Administrator administrator = adminRepository.findById(longChatId).get();
+                    Specialist specialist = specialistRepository.findById(Long.parseLong(administrator.getCurrentSpecialistId())).get();
+                    specialist.setReceptionSchedule(savedScheduleTime);
+                    specialistRepository.save(specialist);
+                    text = FIX_DAYS.receiveScheduleString(savedScheduleTime) + "\nРасписание для специалиста " + specialist.receiveShortName() + " установлено.";
+                    inlineKeyboardMarkup = botMethod.receiveOneButtonMenu("Назад", "Расписание специалиста");
+                }
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, text);
+                editMessageText.setReplyMarkup(inlineKeyboardMarkup);
+                executeEditMessageText(editMessageText);
+
+
+            } else if (callbackData.contains(endWeekWorkTag)) {
+                String time = callbackData.replace(endWeekWorkTag, "");
+                String[] scheduleTime = savedWorkSchedule.get(stringChatId) == null ? new String[0] : savedWorkSchedule.get(stringChatId).split("/");
+                InlineKeyboardMarkup inlineKeyboardMarkup = new InlineKeyboardMarkup();
+                String text = "";
+
+                if (scheduleTime.length == 0) {
+                    text = "Выберите время окончания рабочего дня для понедельника.";
+                    List<List<InlineKeyboardButton>> rowsInline = createEndScheduleButtonsSet(Integer.parseInt(time), beginWeekWorkTag);
+                    inlineKeyboardMarkup.setKeyboard(rowsInline);
+
+                } else if (scheduleTime.length == 1) {
+                    text = "Выберите время окончания рабочего дня для вторника.";
+                    List<List<InlineKeyboardButton>> rowsInline = createEndScheduleButtonsSet(Integer.parseInt(time), beginWeekWorkTag);
+                    inlineKeyboardMarkup.setKeyboard(rowsInline);
+
+                } else if (scheduleTime.length == 2) {
+                    text = "Выберите время окончания рабочего дня для среды.";
+                    List<List<InlineKeyboardButton>> rowsInline = createEndScheduleButtonsSet(Integer.parseInt(time), beginWeekWorkTag);
+                    inlineKeyboardMarkup.setKeyboard(rowsInline);
+
+                } else if (scheduleTime.length == 3) {
+                    text = "Выберите время окончания рабочего дня для четверга.";
+                    List<List<InlineKeyboardButton>> rowsInline = createEndScheduleButtonsSet(Integer.parseInt(time), beginWeekWorkTag);
+                    inlineKeyboardMarkup.setKeyboard(rowsInline);
+
+                } else if (scheduleTime.length == 4) {
+                    text = "Выберите время окончания рабочего дня для пятницы.";
+                    List<List<InlineKeyboardButton>> rowsInline = createEndScheduleButtonsSet(Integer.parseInt(time), beginWeekWorkTag);
+                    inlineKeyboardMarkup.setKeyboard(rowsInline);
+
+                } else if (scheduleTime.length == 5) {
+                    text = "Выберите время окончания рабочего дня для субботы.";
+                    List<List<InlineKeyboardButton>> rowsInline = createEndScheduleButtonsSet(Integer.parseInt(time), beginWeekWorkTag);
+                    inlineKeyboardMarkup.setKeyboard(rowsInline);
+
+                } else if (scheduleTime.length == 6) {
+                    text = "Выберите время окончания рабочего дня для воскресенья.";
+                    List<List<InlineKeyboardButton>> rowsInline = createEndScheduleButtonsSet(Integer.parseInt(time), beginWeekWorkTag);
+                    inlineKeyboardMarkup.setKeyboard(rowsInline);
+                }
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, text);
+                editMessageText.setReplyMarkup(inlineKeyboardMarkup);
+                executeEditMessageText(editMessageText);
+
+            } else if (callbackData.equals("Четный/нечетный график")) {
+                savedWorkSchedule.remove(stringChatId);
+                String specialistId = adminRepository.findById(longChatId).get().getCurrentSpecialistId();
+                Specialist specialist = specialistRepository.findById(Long.parseLong(specialistId)).get();
+                String text = "Специалист: " + specialist.receiveShortName() + "\nАктуальный график:\n" + EVEN_ODD_DAYS.receiveScheduleString(specialist.getReceptionSchedule()) +
+                        "\nВ этом меню вы можете установить рабочее время для четных и нечетных дней месяца.\nУстановите время начала рабочего дня специалиста для нечетного дня месяца.";
+                InlineKeyboardMarkup inlineKeyboardMarkup = new InlineKeyboardMarkup();
+                List<List<InlineKeyboardButton>> rowsInline = createBeginDayButtonsSet(endDayWorkTag);
+                inlineKeyboardMarkup.setKeyboard(rowsInline);
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, text);
+                editMessageText.setReplyMarkup(inlineKeyboardMarkup);
+                executeEditMessageText(editMessageText);
+
+            } else if (callbackData.contains(beginDayWorkTag)) {
+                String time = callbackData.replace(beginDayWorkTag, "");
+                String text = "";
+                String savedScheduleTime = "";
+                String[] scheduleTime = savedWorkSchedule.get(stringChatId) == null ? new String[0] : savedWorkSchedule.get(stringChatId).split("/");
+                InlineKeyboardMarkup inlineKeyboardMarkup = new InlineKeyboardMarkup();
+                if (scheduleTime.length == 0) {
+                    savedWorkSchedule.put(stringChatId, time + "/");
+                    text = "График работы:\n" + EVEN_ODD_DAYS.receiveScheduleString(savedWorkSchedule.get(stringChatId) + EVEN_ODD_DAYS.getLabel()) + "\nУстановите время начала рабочего дня специалиста для четного дня месяца.";
+                    inlineKeyboardMarkup.setKeyboard(beginWorkTime(endDayWorkTag));
+                } else if (scheduleTime.length == 1) {
+                    savedScheduleTime = savedWorkSchedule.get(stringChatId);
+                    savedWorkSchedule.put(stringChatId, savedScheduleTime + time + "/");
+                    text = "График работы:\n" + EVEN_ODD_DAYS.receiveScheduleString(savedWorkSchedule.get(stringChatId) + EVEN_ODD_DAYS.getLabel()) + "\nВыберите выходной день или нажмите клавишу \"Готово\".";
+                    inlineKeyboardMarkup = createWeekendButtonsSet("");
+                }
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, text);
+                editMessageText.setReplyMarkup(inlineKeyboardMarkup);
+                executeEditMessageText(editMessageText);
+
+            } else if (callbackData.contains(endDayWorkTag)) {
+                String time = callbackData.replace(endDayWorkTag, "");
+                String text = "";
+                String[] scheduleTime = savedWorkSchedule.get(stringChatId) == null ? new String[0] : savedWorkSchedule.get(stringChatId).split("/");
+                InlineKeyboardMarkup inlineKeyboardMarkup = new InlineKeyboardMarkup();
+
+                if (scheduleTime.length == 0) {
+                    text = "Установите время окончания рабочего дня специалиста для нечетного дня месяца.";
+                    inlineKeyboardMarkup.setKeyboard(createEndDayButtonsSet(Integer.parseInt(time)));
+                } else if (scheduleTime.length == 1) {
+                    text = "Установите время окончания рабочего дня специалиста для четного дня месяца.";
+                    inlineKeyboardMarkup.setKeyboard(createEndDayButtonsSet(Integer.parseInt(time)));
+                }
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, text);
+                editMessageText.setReplyMarkup(inlineKeyboardMarkup);
+                executeEditMessageText(editMessageText);
+            } else if (callbackData.contains(weekDayTag)) {
+                String scheduleData = callbackData.replace(weekDayTag, "");
+                String savedScheduleTime = savedWorkSchedule.get(stringChatId) + scheduleData;
+                savedWorkSchedule.put(stringChatId, savedScheduleTime + "/");
+                String[] data = savedScheduleTime.split("/");
+                String choseDays = savedScheduleTime.replace(data[0], "").replace(data[1], "");
+                String text = "Выберите выходной день или нажмите клавишу \"Готово\".";
+                InlineKeyboardMarkup inlineKeyboardMarkup = createWeekendButtonsSet(choseDays);
+
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, text);
+                editMessageText.setReplyMarkup(inlineKeyboardMarkup);
+                executeEditMessageText(editMessageText);
+
+            } else if (callbackData.contains(chooseWeekDayTag)) {
+                String savedScheduleTime = savedWorkSchedule.get(stringChatId).
+                        substring(0, savedWorkSchedule.get(stringChatId).length() - 1) + EVEN_ODD_DAYS.getLabel();
+               // savedWorkSchedule.put(stringChatId, savedScheduleTime);
+                long specialistId = Long.parseLong(adminRepository.findById(longChatId).get().getCurrentSpecialistId());
+                Specialist specialist = specialistRepository.findById(specialistId).get();
+                specialist.setReceptionSchedule(savedScheduleTime);
+                specialistRepository.save(specialist);
+                String textForMessage = "Обновлено расписание специалиста: " + specialist.receiveShortName() + "\n" + EVEN_ODD_DAYS.receiveScheduleString(savedScheduleTime);
+                InlineKeyboardMarkup inlineKeyboardMarkup = botMethod.receiveOneButtonMenu("⏎ Назад", "Расписание специалиста");
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, textForMessage);
+                editMessageText.setReplyMarkup(inlineKeyboardMarkup);
+                executeEditMessageText(editMessageText);
+
+            } else if (callbackData.equals("Скользящий график")) {
+                savedWorkSchedule.remove(stringChatId);
+                String specialistId = adminRepository.findById(longChatId).get().getCurrentSpecialistId();
+                Specialist specialist = specialistRepository.findById(Long.parseLong(specialistId)).get();
+                String text = "Специалист: " + specialist.receiveShortName() + "\nАктуальный график:\n" + ROLLING_CHART.receiveScheduleString(specialist.getReceptionSchedule()) +
+                        "\nВ этом меню вы можете настроить скользящий рабочий график.\nУстановите время начала рабочего дня.";
+                InlineKeyboardMarkup inlineKeyboardMarkup = new InlineKeyboardMarkup();
+                List<List<InlineKeyboardButton>> rowsInline = createBeginDayButtonsSet(beginHourTag);
+                inlineKeyboardMarkup.setKeyboard(rowsInline);
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, text);
+                editMessageText.setReplyMarkup(inlineKeyboardMarkup);
+                executeEditMessageText(editMessageText);
+
+            } else if (callbackData.contains(beginHourTag)) {
+                String time = callbackData.replace(beginHourTag, "");
+                String text = "Выберите время окончания рабочего дня.";
+                InlineKeyboardMarkup inlineKeyboardMarkup = new InlineKeyboardMarkup();
+                List<List<InlineKeyboardButton>> rowsInline = createEndScheduleButtonsSet(Integer.parseInt(time), endHourTag);
+                inlineKeyboardMarkup.setKeyboard(rowsInline);
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, text);
+                editMessageText.setReplyMarkup(inlineKeyboardMarkup);
+                executeEditMessageText(editMessageText);
+
+            } else if (callbackData.contains(endHourTag)) { //  8#16
+                String time = callbackData.replace(endHourTag, "") + "/";
+                savedWorkSchedule.put(stringChatId, time);
+                String text = "График:\n" + ROLLING_CHART.receiveScheduleString(time + ROLLING_CHART.getLabel()) + "Установите интервал (график) рабочих и выходных дней.";
+                InlineKeyboardMarkup inlineKeyboardMarkup = createScheduleButtonsSet(scheduleTag); //scheduleTag
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, text);
+                editMessageText.setReplyMarkup(inlineKeyboardMarkup);
+                executeEditMessageText(editMessageText);
+
+            } else if (callbackData.contains(scheduleTag)) {
+                String schedule = callbackData.replace(scheduleTag, "");
+                String savedScheduleTime = savedWorkSchedule.get(stringChatId) + schedule + "/";
+                savedWorkSchedule.put(stringChatId, savedScheduleTime);
+                String text = "*В этом меню предстоит выбрать дату начала выходных дней специалиста. Если в данный момент наступили выходные дни, значит надо выбрать дату начала следующих выходных.\nГрафик:\n" +
+                        ROLLING_CHART.receiveScheduleString(savedScheduleTime + ROLLING_CHART.getLabel()) + "\nВыберите дату начала выходных дней*.";
+                InlineKeyboardMarkup inlineKeyboardMarkup = createDateButtonsSet(chooseWeekendTag);
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, text);
+                editMessageText.setReplyMarkup(inlineKeyboardMarkup);
+                executeEditMessageText(editMessageText);
+
+            } else if (callbackData.contains(chooseWeekendTag)) {
+                String schedule = callbackData.replace(chooseWeekendTag, "");
+                String savedScheduleTime = savedWorkSchedule.get(stringChatId) + schedule + ROLLING_CHART.getLabel();
+                long specialistId = Long.parseLong(adminRepository.findById(longChatId).get().getCurrentSpecialistId());
+                Specialist specialist = specialistRepository.findById(specialistId).get();
+                specialist.setReceptionSchedule(savedScheduleTime);
+                specialistRepository.save(specialist);
+                String textForMessage = "Обновлено расписание специалиста: " + specialist.receiveShortName() + "\n" + ROLLING_CHART.receiveScheduleString(savedScheduleTime);
+                InlineKeyboardMarkup inlineKeyboardMarkup = botMethod.receiveOneButtonMenu("⏎ Назад", "Расписание специалиста");
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, textForMessage);
+                editMessageText.setReplyMarkup(inlineKeyboardMarkup);
+                executeEditMessageText(editMessageText);
+            }
+
+
+
+
 
 
         }
@@ -399,11 +907,11 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
             registerData.put(stringChatId, dataText);
             editMessageText.setText(textForMessage);
             tempData.put(stringChatId, nextStepData);
-            editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(back, callData));
+            editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(backTag, callData));
             executeEditMessageText(editMessageText);
         } else {
             editMessageText.setText("Невалидный ввод");
-            editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(back, callData));
+            editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(backTag, callData));
             executeEditMessageText(editMessageText);
             return false;
         }
@@ -428,14 +936,14 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
                 registerData.put(stringChatId, dataText);
                 editMessageText.setText(textForMessage);
                 tempData.put(stringChatId, nextStepData);
-                editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(back, callData));
+                editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(backTag, callData));
                 executeEditMessageText(editMessageText);
             }
         } catch (NumberFormatException e) {
             editMessageText.setText("Невалидный ввод");
             //log.error("SendMessage execute error: " + e.getMessage());
         }
-        editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(back, callData));
+        editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(backTag, callData));
         executeEditMessageText(editMessageText);
     }
 
@@ -458,7 +966,7 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
                 registerData.put(stringChatId, dataText);
                 editMessageText.setText(textForMessage);
                 tempData.put(stringChatId, nextStepData);
-                editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(back, callData));
+                editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(backTag, callData));
                 executeEditMessageText(editMessageText);
                 return true;
             }
@@ -466,7 +974,7 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
             //log.error("SendMessage execute error: " + e.getMessage());
         }
         editMessageText.setText("Невалидный ввод");
-        editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(back, callData));
+        editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(backTag, callData));
         executeEditMessageText(editMessageText);
         return false;
     }
@@ -490,7 +998,7 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
             textForMessage = "Сначала необходимо выбрать специалиста.";
         }
         EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, textForMessage);
-        editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(back, callData));
+        editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(backTag, callData));
         executeEditMessageText(editMessageText);
     }
 
@@ -501,13 +1009,13 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
         specialist.setId(longChatId);
         specialist.setProfession("");
         specialist.setPhoneNumber("");
-        specialist.setWorkTimeLength("");
         specialist.setReceptionSchedule("");
         specialist.setReceptionSchedule("");
         specialist.setOwnerId(stringChatId);
         specialist.setAdministratorIdList("");
-        specialist.setSpecialistId(stringChatId);
         specialist.setClientAppointmentRange("");
+        specialist.setSpecialistId(stringChatId);
+        specialist.setWorkTimeLength("08:00/22:00");
         specialist.setName(inputtedName.get(stringChatId));
         specialist.setSurname(inputtedSurname.get(stringChatId));
         specialist.setPatronymic(inputtedPatronymic.get(stringChatId));
@@ -516,7 +1024,7 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
         long messageId = savedMessageId.get(stringChatId) == null ? 0 : savedMessageId.get(stringChatId) + 1;
         EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId,
                 inputtedName.get(stringChatId) + " " + inputtedPatronymic.get(stringChatId) + ", спасибо за регистрацию!");
-        editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(back, botMethod.callData_backToAdminMenu));
+        editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(backTag, botMethod.callData_backToAdminMenu));
         executeEditMessageText(editMessageText);
     }
 
@@ -528,6 +1036,8 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
         administrator.setPhoneNumber("");
         administrator.setSpecialistIdList("");
         administrator.setOwnerId(stringChatId);
+        administrator.setCurrentSpecialistId(null);
+        administrator.setWorkTimeLength("08:00/22:00");
         administrator.setName(inputtedName.get(stringChatId));
         administrator.setSurname(inputtedSurname.get(stringChatId));
         administrator.setPatronymic(inputtedPatronymic.get(stringChatId));
@@ -535,7 +1045,7 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
         long messageId = savedMessageId.get(stringChatId) == null ? 0 : savedMessageId.get(stringChatId) + 1;
         EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId,
                 inputtedName.get(stringChatId) + " " + inputtedPatronymic.get(stringChatId) + ", спасибо за регистрацию!");
-        editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(back, botMethod.callData_backToAdminMenu));
+        editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(backTag, botMethod.callData_backToAdminMenu));
         executeEditMessageText(editMessageText);
     }
 
@@ -556,9 +1066,9 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
             ownerId = specialistRepository.findById(longChatId).get().getOwnerId();
             saveClientInDB(stringChatId, ownerId);
         }
-        long  messageId = savedMessageId.get(stringChatId) == null ? 0 : savedMessageId.get(stringChatId) + 1;
+        long messageId = savedMessageId.get(stringChatId) == null ? 0 : savedMessageId.get(stringChatId) + 1;
         EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, textForMessage);
-        editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(back, callData));
+        editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(backTag, callData));
         executeEditMessageText(editMessageText);
     }
 
@@ -603,7 +1113,7 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
         if (clients.isEmpty()) {
             textForMessage = "Нет клиентов для записи";
         }
-        InlineKeyboardMarkup inlineKeyboardMarkup = botMethod.createClientsButtonSet(clientIdTeg, clients, mainMenuData);
+        InlineKeyboardMarkup inlineKeyboardMarkup = botMethod.createClientsButtonSet(clientIdTag, clients, mainMenuData);
         EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, textForMessage);
         editMessageText.setReplyMarkup(inlineKeyboardMarkup);
         executeEditMessageText(editMessageText);
@@ -641,18 +1151,174 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
         }
         List<Client> clients = clientRepository.findByOwnerId(ownerId).stream().filter(cli -> cli.getSurname().toUpperCase().startsWith(dataSymbol)).toList();
         EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, textForMessage);
-        editMessageText.setReplyMarkup(botMethod.createClientsButtonSet(clientIdTeg, clients, mainMenuData));
+        editMessageText.setReplyMarkup(botMethod.createClientsButtonSet(clientIdTag, clients, mainMenuData));
         return editMessageText;
     }
 
-/*
-    private EditeSendMessage receiveClientsMenu(long longChatId, String stringChatId, long messageId, String clientId, String textForMessage, String backToMenu) {
-        EditeSendMessage editeSendMessage = receiveCreatedEditMessage(longChatId, messageId, textForMessage);
-        Client client = clientRepository.findById(Long.parseLong(clientId)).get();
+    private String createAppointmentText(String specialistId, String date) { // date = "dd.MM.yyyy"
+        StringBuilder stringBuilder = new StringBuilder();
+        List<Appointment> appointments = appointmentRepository.findBySpecialistId(specialistId).stream().
+                filter(it -> it.getAppointmentDateTime().contains(date)).sorted().toList();
+        // Собираем specialistId
+        Set<Long> clientIds = appointments.stream().map(Appointment::getClientId).collect(Collectors.toSet());
+        // Загружаем специалистов
+        Map<Long, Client> clientsMap = clientRepository.findByIdIn(clientIds).stream().
+                collect(Collectors.toMap(Client::getId, Function.identity()));
 
+        for (Appointment appointment : appointments) {
+            Client clients = clientsMap.get(appointment.getClientId());
+            stringBuilder.append(appointment.getAppointmentDateTime().replace("/", " • ")).append("  ").
+                    append(clients.receiveShortName()).append("\n");
+        }
+        return "Запись на " + date + ":\n" + stringBuilder;
     }
 
- */
+
+    private String createTextForMenu(long longChatId, String stringChatId) {
+        DateTimeFormatter formatYear = DateTimeFormatter.ofPattern("dd.MM.yyyy");
+        LocalDate localDate = LocalDate.now();
+        String textForMenu;
+        if (adminRepository.existsById(longChatId)) {
+            Administrator administrator = adminRepository.findById(longChatId).get();
+            if (administrator.getCurrentSpecialistId() == null) {
+                textForMenu = "Специалист: специалист не выбран";
+            } else {
+                Specialist specialist = specialistRepository.findById(Long.parseLong(administrator.getCurrentSpecialistId())).get();
+                textForMenu = "Специалист: " + specialist.receiveShortName() + "\n" + createAppointmentText(administrator.getCurrentSpecialistId(), localDate.format(formatYear));
+            }
+        } else {
+            Specialist specialist = specialistRepository.findById(longChatId).get();
+            textForMenu = "Запись на сегодня:\n" + createAppointmentText(stringChatId, localDate.format(formatYear));
+        }
+        return textForMenu;
+    }
+
+
+    private void cleanMapData(String stringChatId) {
+        tempData.remove(stringChatId);
+        returnData.remove(stringChatId);
+        inputtedName.remove(stringChatId);
+        savedClientId.remove(stringChatId);
+        savedMessageId.remove(stringChatId);
+        inputtedSurname.remove(stringChatId);
+        registerPassword.remove(stringChatId);
+        savedWorkSchedule.remove(stringChatId);
+        inputtedPatronymic.remove(stringChatId);
+        inputtedPhoneNumber.remove(stringChatId);
+        inputtedClientBirthdate.remove(stringChatId);
+    }
+
+    private List<List<InlineKeyboardButton>> beginWorkTime(String callBackData) {
+        List<List<InlineKeyboardButton>> rowsInline = new ArrayList<>(); // коллекция коллекций с горизонтальным рядом кнопок, создаёт вертикальный ряд кнопок
+        int beginHour = 0;
+        for (int i = 0; i < 6; i++) {
+            List<InlineKeyboardButton> rowInlineButton = new ArrayList<>();
+            for (int x = beginHour; x <= beginHour + 4 && x < 25; x++) {
+                InlineKeyboardButton button = new InlineKeyboardButton(x + ":00");
+                button.setCallbackData(callBackData + x);
+                rowInlineButton.add(button);
+            }
+            beginHour += 5;
+            rowsInline.add(rowInlineButton);
+        }
+        return rowsInline;
+    }
+
+    private List<List<InlineKeyboardButton>> endWorkTime(int time, String callBackData) {
+        List<List<InlineKeyboardButton>> rowsInline = new ArrayList<>(); // коллекция коллекций с горизонтальным рядом кнопок, создаёт вертикальный ряд кнопок
+        int beginHour = time + 1;
+        for (int i = 0; i < 6; i++) {
+            List<InlineKeyboardButton> rowInlineButton = new ArrayList<>();
+            for (int x = beginHour; x <= beginHour + 4 && x < 25; x++) {
+                InlineKeyboardButton button = new InlineKeyboardButton(x + ":00");
+                button.setCallbackData(callBackData + time + "#" + x);
+                rowInlineButton.add(button);
+            }
+            beginHour += 5;
+            rowsInline.add(rowInlineButton);
+        }
+        return rowsInline;
+    }
+
+    private List<List<InlineKeyboardButton>> createBeginScheduleButtonsSet() {
+        List<List<InlineKeyboardButton>> rowsInline = beginWorkTime(endWeekWorkTag);
+        List<InlineKeyboardButton> rowInlineButtons = new ArrayList<>();
+        InlineKeyboardButton weekendButton = new InlineKeyboardButton("Выходной день");
+        weekendButton.setCallbackData(beginWeekWorkTag + "*");
+        rowInlineButtons.add(weekendButton);
+        InlineKeyboardButton backButton = new InlineKeyboardButton("Назад");
+        backButton.setCallbackData("Расписание специалиста");
+        rowInlineButtons.add(backButton);
+        rowsInline.add(rowInlineButtons);
+        return rowsInline;
+    }
+
+    private List<List<InlineKeyboardButton>> createEndScheduleButtonsSet(int time, String callBackData) { //TODO endWorkTime
+        List<List<InlineKeyboardButton>> rowsInline = endWorkTime(time, callBackData); // beginWeekWorkTag
+        List<InlineKeyboardButton> rowInlineButtonBack = new ArrayList<>();
+        InlineKeyboardButton backButton = new InlineKeyboardButton("Расписание специалиста");
+        backButton.setCallbackData("Расписание специалиста");
+        rowInlineButtonBack.add(backButton);
+        rowsInline.add(rowInlineButtonBack);
+        return rowsInline;
+    }
+
+    private List<List<InlineKeyboardButton>> createBeginDayButtonsSet(String callBackData) {
+        List<List<InlineKeyboardButton>> rowsInline = beginWorkTime(callBackData);
+        List<InlineKeyboardButton> rowInlineButtonBack = new ArrayList<>();
+        InlineKeyboardButton backButton = new InlineKeyboardButton("Расписание специалиста");
+        backButton.setCallbackData("Расписание специалиста");
+        rowInlineButtonBack.add(backButton);
+        rowsInline.add(rowInlineButtonBack);
+        return rowsInline;
+    }
+
+    private List<List<InlineKeyboardButton>> createEndDayButtonsSet(int time) {
+        List<List<InlineKeyboardButton>> rowsInline = endWorkTime(time, beginDayWorkTag);
+        List<InlineKeyboardButton> rowInlineButtonBack = new ArrayList<>();
+        InlineKeyboardButton backButton = new InlineKeyboardButton("Расписание специалиста");
+        backButton.setCallbackData("Расписание специалиста");
+        rowInlineButtonBack.add(backButton);
+        rowsInline.add(rowInlineButtonBack);
+        return rowsInline;
+    }
+
+    private InlineKeyboardMarkup createWeekendButtonsSet(String choseDays) {
+        Map<String, String> daysOfWeek = new LinkedHashMap<>();
+        if (!choseDays.contains("1")) daysOfWeek.put("Понедельник", weekDayTag + "1");
+        if (!choseDays.contains("2")) daysOfWeek.put("Вторник", weekDayTag + "2");
+        if (!choseDays.contains("3")) daysOfWeek.put("Среда", weekDayTag + "3");
+        if (!choseDays.contains("4")) daysOfWeek.put("Четверг", weekDayTag + "4");
+        if (!choseDays.contains("5")) daysOfWeek.put("Пятница", weekDayTag + "5");
+        if (!choseDays.contains("6")) daysOfWeek.put("Суббота", weekDayTag + "6");
+        if (!choseDays.contains("0")) daysOfWeek.put("Воскресенье", weekDayTag + "0");
+        daysOfWeek.put("Готово", chooseWeekDayTag);
+        return botMethod.createDataButtonSet(daysOfWeek, "");
+    }
+
+    private InlineKeyboardMarkup createScheduleButtonsSet(String callBackData) {
+        Map<String, String> schedule = new LinkedHashMap<>();
+        schedule.put("1 через 1", "1");
+        schedule.put("2 через 2", "2");
+        schedule.put("3 через 3", "3");
+        schedule.put("4 через 4", "4");
+        schedule.put("Назад", "Расписание специалиста");
+        return botMethod.createDataButtonSet(schedule, callBackData);
+    }
+
+    private InlineKeyboardMarkup createDateButtonsSet(String callBackData) {
+        LocalDate localDate = LocalDate.now();
+        DateTimeFormatter buttonFormat = DateTimeFormatter.ofPattern("dd.MM.yyyy");
+        DateTimeFormatter dataFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+        Map<String, String> weekend = new LinkedHashMap<>();
+        weekend.put(buttonFormat.format(localDate.plus(1L, DAYS)), dataFormat.format(localDate.plus(1L, DAYS)));
+        weekend.put(buttonFormat.format(localDate.plus(2L, DAYS)), dataFormat.format(localDate.plus(2L, DAYS)));
+        weekend.put(buttonFormat.format(localDate.plus(3L, DAYS)), dataFormat.format(localDate.plus(3L, DAYS)));
+        weekend.put(buttonFormat.format(localDate.plus(4L, DAYS)), dataFormat.format(localDate.plus(4L, DAYS)));
+        weekend.put(buttonFormat.format(localDate.plus(5L, DAYS)), dataFormat.format(localDate.plus(5L, DAYS)));
+        weekend.put("Назад", "Расписание специалиста");
+        return botMethod.createDataButtonSet(weekend, callBackData);
+    }
 
 
     public void executeSendMessage(SendMessage sendMessage) {
