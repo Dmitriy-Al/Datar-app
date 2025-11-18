@@ -29,6 +29,8 @@ public class Administrator {
 
     private String password;
 
+    private String organization;
+
     private boolean isOwner;
 
     private String workTimeLength; // рабочий день
@@ -36,6 +38,14 @@ public class Administrator {
     @Override
     public String toString() {
         return " < Administrator name: " + name + ", id = " + id + "> ";
+    }
+
+    public String receiveShortName() {
+        return surname + " " +  name.charAt(0) + ". " + patronymic.charAt(0) + ". ";
+    }
+
+    public String receiveFullName() {
+        return surname + " " +  name + " " + patronymic;
     }
 
 }

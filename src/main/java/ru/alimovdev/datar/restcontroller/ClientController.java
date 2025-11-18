@@ -5,6 +5,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import ru.alimovdev.datar.model.Client;
 import ru.alimovdev.datar.model.ClientRepository;
+import ru.alimovdev.datar.model.Specialist;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -98,6 +99,7 @@ public class ClientController {
         }
     }
 
+
     @GetMapping("/clients/by-owner-id/{ownerId}")// TODO добавил 21.10.2025
     public ResponseEntity<List<Client>> getClientsByOwnerId(@PathVariable String ownerId) {
         try {
@@ -108,5 +110,12 @@ public class ClientController {
         }
     }
 
+    @PostMapping("/clients/by-ids") // TODO добавил 14.11.25
+    public List<Client> getClientsByIds(@RequestBody List<Long> ids) {
+        Iterable<Client> clients = clientRepository.findAllById(ids);
+        List<Client> clientsList = new ArrayList<>();
+        clients.forEach(clientsList::add);
+        return clientsList;
+    }
 
 }

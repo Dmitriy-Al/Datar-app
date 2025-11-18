@@ -30,6 +30,8 @@ public class Specialist {
 
     private String password;
 
+    private boolean isOwner;
+
     private boolean isAdminPermission; // дополнительные полномочия для администратора
 
     private String workTimeLength; // рабочий день
@@ -46,7 +48,11 @@ public class Specialist {
     }
 
     public String receiveShortName() {
-        return surname + "  " +  name.charAt(0) + ". " + patronymic.charAt(0) + ". ";
+        return surname + " " +  name.charAt(0) + ". " + patronymic.charAt(0) + ". ";
+    }
+
+    public String receiveFullName() {
+        return surname + " " +  name + " " + patronymic;
     }
 
 }

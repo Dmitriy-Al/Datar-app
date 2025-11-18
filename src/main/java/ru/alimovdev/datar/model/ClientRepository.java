@@ -7,5 +7,6 @@ import java.util.List;
 public interface ClientRepository extends CrudRepository<Client, Long> {
 
     List<Client> findByOwnerId(String ownerId);
+
     List<Client> findByIdIn(Collection<Long> ids);
 }

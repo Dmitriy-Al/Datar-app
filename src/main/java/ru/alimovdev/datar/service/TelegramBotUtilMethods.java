@@ -7,12 +7,13 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKe
 import ru.alimovdev.datar.model.Client;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 
-public class TelegramBotMethods {
+
+
+public class TelegramBotUtilMethods {
 
     // Редактирование отправленного сообщения
     protected EditMessageText createEditMessageText(long chatId, long messageId, String textForMessage) {
@@ -76,14 +77,14 @@ public class TelegramBotMethods {
         return inlineKeyboardMarkup;
     }
 
-    protected InlineKeyboardMarkup createClientsButtonSet(String dataSymbol, List<Client> clients, String mainMenuData) {
+    protected InlineKeyboardMarkup createClientsButtonSet(String callBackData, List<Client> clients, String mainMenuData) {
         InlineKeyboardMarkup inlineKeyboardMarkup = new InlineKeyboardMarkup();
         List<List<InlineKeyboardButton>> rowsInline = new ArrayList<>();
 
         for (Client cli : clients) {
             List<InlineKeyboardButton> rowInlineButton = new ArrayList<>();
             InlineKeyboardButton button = new InlineKeyboardButton(cli.receiveShortName());
-            button.setCallbackData(dataSymbol + cli.getId());
+            button.setCallbackData(callBackData + cli.getId());
             rowInlineButton.add(button);
             rowsInline.add(rowInlineButton);
         }
@@ -113,25 +114,6 @@ public class TelegramBotMethods {
         return inlineKeyboardMarkup;
     }
 
-
-    // Экранная клавиатура в виде списка произвольной длинны с добавленным текстом для callBackData
-    protected InlineKeyboardMarkup createDataButtonSet(String[] textsForButtons ,String[] textsCallBackData, String callBackDataSymbol) { //TODO Deprecated
-        InlineKeyboardMarkup inlineKeyboardMarkup = new InlineKeyboardMarkup();
-        List<List<InlineKeyboardButton>> rowsInline = new ArrayList<>(); // коллекция коллекций с горизонтальным рядом кнопок, создаёт вертикальный ряд кнопок
-
-        for (int i = 0; i < textsForButtons.length; i++) {
-            List<InlineKeyboardButton> rowInlineButton = new ArrayList<>(); // коллекция с горизонтальным рядом кнопок
-            InlineKeyboardButton button = new InlineKeyboardButton();
-            button.setText(textsForButtons[i]);
-            button.setCallbackData(callBackDataSymbol + textsCallBackData[i]);
-            rowInlineButton.add(button);
-            rowsInline.add(rowInlineButton);
-        }
-
-        inlineKeyboardMarkup.setKeyboard(rowsInline);
-        return inlineKeyboardMarkup;
-    }
-
     // Экранная клавиатура в виде списка произвольной длинны с добавленным текстом для callBackData
     protected InlineKeyboardMarkup createDataButtonSet(Map<String, String> dataButtonSet, String callBackDataSymbol) {
         InlineKeyboardMarkup inlineKeyboardMarkup = new InlineKeyboardMarkup();
@@ -150,37 +132,78 @@ public class TelegramBotMethods {
         return inlineKeyboardMarkup;
     }
 
+    // Экранная клавиатура в виде списка произвольной длинны с добавленным текстом для callBackData
+    protected InlineKeyboardMarkup createDataButtonSet(String callBackDataSymbol, Map<String, Long> dataButtonSet) {
+        InlineKeyboardMarkup inlineKeyboardMarkup = new InlineKeyboardMarkup();
+        List<List<InlineKeyboardButton>> rowsInline = new ArrayList<>(); // коллекция коллекций с горизонтальным рядом кнопок, создаёт вертикальный ряд кнопок
 
-    protected SendMessage createSpecialistMenu(String stringChatId, String textForMessage, String[] textsForButtons) {
+        for (Map.Entry<String, Long> data : dataButtonSet.entrySet()) {
+            List<InlineKeyboardButton> rowInlineButton = new ArrayList<>(); // коллекция с горизонтальным рядом кнопок
+            InlineKeyboardButton button = new InlineKeyboardButton();
+            button.setText(data.getKey());
+            button.setCallbackData(callBackDataSymbol + data.getValue());
+            rowInlineButton.add(button);
+            rowsInline.add(rowInlineButton);
+        }
+
+        inlineKeyboardMarkup.setKeyboard(rowsInline);
+        return inlineKeyboardMarkup;
+    }
+
+
+    protected SendMessage createBaseMenu(String stringChatId, String textForMessage, String[] textsForButtons) {
         SendMessage sendMessage = new SendMessage(stringChatId, textForMessage);
         sendMessage.setReplyMarkup(createButtonSet(textsForButtons));
         return sendMessage;
     }
 
 
-    protected EditMessageText createSpecialistMenu(long longChatId, long messageId, String textForMessage, String[] textsForButtons) {
+    protected EditMessageText createBaseMenu(long longChatId, long messageId, String textForMessage, String[] textsForButtons) {
         EditMessageText editMessageText = createEditMessageText(longChatId, messageId, textForMessage);
         editMessageText.setReplyMarkup(createButtonSet(textsForButtons));
         return editMessageText;
     }
 
+    /*
     protected EditMessageText createSpcListMenu(long longChatId, long messageId, String textForMessage, String[] textsForButtons, String[] textsCallBackData, String callBackDataSymbol) {
         EditMessageText editMessageText = createEditMessageText(longChatId, messageId, textForMessage);
         editMessageText.setReplyMarkup(createDataButtonSet(textsForButtons, textsCallBackData, callBackDataSymbol));
         return editMessageText;
     }
 
+    protected EditMessageText createSpcListMenu(long longChatId, long messageId, Map<String, Long> specialistsMap, String textForMessage, String callBackDataSymbol) {
+        EditMessageText editMessageText = createEditMessageText(longChatId, messageId, textForMessage);
+        editMessageText.setReplyMarkup(createDataButtonSet(callBackDataSymbol, specialistsMap));
+        return editMessageText;
+    }
+   */
+
+
+    protected EditMessageText createUtilMenu(long longChatId, long messageId, Map<String, Long> buttonData, String textForMessage, String callBackDataAddition) {
+        EditMessageText editMessageText = createEditMessageText(longChatId, messageId, textForMessage);
+        editMessageText.setReplyMarkup(createDataButtonSet(callBackDataAddition, buttonData));
+        return editMessageText;
+    }
+
+    protected EditMessageText createUtilMenu(long longChatId, long messageId, String textForMessage, Map<String, String> buttonData, String callBackDataAddition) {
+        EditMessageText editMessageText = createEditMessageText(longChatId, messageId, textForMessage);
+        editMessageText.setReplyMarkup(createDataButtonSet(buttonData, callBackDataAddition));
+        return editMessageText;
+    }
+
     protected SendMessage createUserMenu(String stringChatId, String textForMessage) {
         SendMessage sendMessage = new SendMessage(stringChatId, textForMessage);
         sendMessage.setReplyMarkup(receiveTwoButtonsMenu("\uD83D\uDDD3 Ваша запись",
-                callData_userAppointment + stringChatId,"Настройки ⚙", callData_userSettings));
+                TelegramBotCommands.callbackData_userAppointment +
+                        stringChatId,"Настройки ⚙", TelegramBotCommands.callbackData_userSettings));
         return sendMessage;
     }
 
     protected EditMessageText createUserMenu(long longChatId, long messageId, String textForMessage) {
         EditMessageText editMessageText = createEditMessageText(longChatId, messageId, textForMessage);
         editMessageText.setReplyMarkup(receiveTwoButtonsMenu("\uD83D\uDDD3 Ваша запись",
-                callData_userAppointment + longChatId,"Настройки ⚙", callData_userSettings));
+                TelegramBotCommands.callbackData_userAppointment +
+                        longChatId,"Настройки ⚙", TelegramBotCommands.callbackData_userSettings));
         return editMessageText;
     }
 
@@ -196,19 +219,19 @@ public class TelegramBotMethods {
 
         InlineKeyboardButton firstButton = new InlineKeyboardButton();
         firstButton.setText("Зарегистрироваться как администратор");
-        firstButton.setCallbackData(callData_regAsAdmin); // TODO
+        firstButton.setCallbackData(TelegramBotCommands.callbackData_regAsAdmin); // TODO
         firstRowInlineButton.add(firstButton);
         InlineKeyboardButton secondButton = new InlineKeyboardButton();
         secondButton.setText("Зарегистрироваться как специалист");
-        secondButton.setCallbackData(callData_regAsSpecialist);// TODO
+        secondButton.setCallbackData(TelegramBotCommands.callbackData_regAsSpecialist);// TODO
         secondRowInlineButton.add(secondButton);
         InlineKeyboardButton thirdButton = new InlineKeyboardButton();
         thirdButton.setText("Удалить мою учетную запись");
-        thirdButton.setCallbackData(callData_delMyData);// TODO
+        thirdButton.setCallbackData(TelegramBotCommands.callbackData_delMyData);// TODO
         thirdRowInlineButton.add(thirdButton);
         InlineKeyboardButton fourthButton = new InlineKeyboardButton();
-        fourthButton.setText(back);
-        fourthButton.setCallbackData(callData_backToUserMenu);// TODO
+        fourthButton.setText(TelegramBotCommands.backText1);
+        fourthButton.setCallbackData(TelegramBotCommands.callbackData_backToUserMenu);// TODO
         fourthRowInlineButton.add(fourthButton);
 
         rowsInline.add(firstRowInlineButton);
@@ -223,9 +246,8 @@ public class TelegramBotMethods {
 
     // Выбор даты для записи клиента
     //   fun receiveAppointmentMonth(String stringChatId, int intMessageId, String callBackData,  clientRepository: ClientDataDao): EditMessageText {}
-
-
-    protected EditMessageText searchClient(long longChatId, long messageId, String textForMessage, String callBackDataSymbol, String toMainMenu) {
+protected EditMessageText searchClient(long longChatId, long messageId, String textForMessage, String callBackData, String callBackForAllClients, String toMainMenu) {
+    // protected EditMessageText searchClient(long longChatId, long messageId, String textForMessage, String callBackData, String toMainMenu) {
         EditMessageText editMessageText = createEditMessageText(longChatId, messageId, textForMessage);
         InlineKeyboardMarkup inlineKeyboardMarkup = new InlineKeyboardMarkup();
         List<List<InlineKeyboardButton>> rowsInline = new ArrayList<>(); // коллекция коллекций с горизонтальным рядом кнопок, создаёт вертикальный ряд кнопок
@@ -240,27 +262,27 @@ public class TelegramBotMethods {
             if (i == 1049 || i == 1066 || i == 1067 || i == 1068) continue;
             if (i < 1047) {
                 InlineKeyboardButton button = new InlineKeyboardButton(String.valueOf((char) i));
-                button.setCallbackData(callBackDataSymbol + (char) i);
+                button.setCallbackData(callBackData + (char) i);
                 firstRowInlineButton.add(button);
             } else if (i < 1055) {
                 InlineKeyboardButton button = new InlineKeyboardButton(String.valueOf((char) i));
-                button.setCallbackData(callBackDataSymbol + (char) i);
+                button.setCallbackData(callBackData + (char) i);
                 secondRowInlineButton.add(button);
             } else if (i < 1062) {
                 InlineKeyboardButton button = new InlineKeyboardButton(String.valueOf((char) i));
-                button.setCallbackData(callBackDataSymbol + (char) i);
+                button.setCallbackData(callBackData + (char) i);
                 thirdRowInlineButton.add(button);
             } else {
                 InlineKeyboardButton button = new InlineKeyboardButton(String.valueOf((char) i));
-                button.setCallbackData(callBackDataSymbol + (char) i);
+                button.setCallbackData(callBackData + (char) i);
                 fourthRowInlineButton.add(button);
             }
         }
-        InlineKeyboardButton firstButton = new InlineKeyboardButton(back);
+        InlineKeyboardButton firstButton = new InlineKeyboardButton(TelegramBotCommands.backText1);
         firstButton.setCallbackData(toMainMenu);
         fifthRowInlineButton.add(firstButton);
         InlineKeyboardButton secondButton = new InlineKeyboardButton("Список всех клиентов");
-        secondButton.setCallbackData(TelegramBotCommands.callData_clientsList);
+        secondButton.setCallbackData(callBackForAllClients);
         fifthRowInlineButton.add(secondButton);
 
         rowsInline.add(firstRowInlineButton);
@@ -274,8 +296,7 @@ public class TelegramBotMethods {
         return editMessageText;
     }
 
-
-
+    /*
     final String back = "⏎  Назад в меню";
 
     protected final String callData_delMyData = "#delmydata";
@@ -292,6 +313,7 @@ public class TelegramBotMethods {
     protected final String callData_adminSettings = "Настройки ⚙";
     protected final String callData_specSettings = "Настройки  ⚙";
     protected final String callData_userAppointment = "usrAppointment";
+     */
 
 
 

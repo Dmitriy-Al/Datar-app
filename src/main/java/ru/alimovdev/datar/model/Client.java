@@ -41,6 +41,18 @@ public class Client {
     }
 
     public String receiveShortName() {
-        return surname + "  " +  name.charAt(0) + ". " + patronymic.charAt(0) + ". ";
+        return surname + " " +  name.charAt(0) + ". " + patronymic.charAt(0) + ". ";
     }
+
+    public String receiveFullName() {
+        return surname + " " +  name + " " + patronymic;
+    }
+
+    public String receiveClientInfo() {
+        String status = tgId > 0 ? "Статус:  ✓ авторизован" : "Статус:  ✘ не авторизован";
+        return receiveFullName() + "\n" + status + "\n" + "Телефон:  " + phoneNumber + "\n" +
+                "Дата рождения:  " + birthdate + "\n" + "История посещений:  " + visitHistory;
+    }
+
+
 }

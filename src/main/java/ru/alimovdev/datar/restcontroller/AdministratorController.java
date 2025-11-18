@@ -54,7 +54,6 @@ public class AdministratorController {
     @GetMapping("/administrators/{id}") // TODO добавил
     public ResponseEntity<Administrator> getAdministratorById(@PathVariable long id) {
         Optional<Administrator> administrator = adminRepository.findById(id);
-
         if (administrator.isPresent()) {
             return ResponseEntity.ok(administrator.get());
         } else {
