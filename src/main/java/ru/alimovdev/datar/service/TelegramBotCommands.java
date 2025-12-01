@@ -1,5 +1,8 @@
 package ru.alimovdev.datar.service;
 
+import org.springframework.scheduling.annotation.EnableScheduling;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.transaction.annotation.Transactional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.Cache;
@@ -29,19 +32,20 @@ import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static java.time.temporal.ChronoUnit.DAYS;
-import static ru.alimovdev.datar.service.ConfirmAppointmentStatus.UNCERTAIN;
-import static ru.alimovdev.datar.service.ConfirmAppointmentStatus.UNDEFINED;
+import static java.time.temporal.ChronoUnit.HOURS;
 import static ru.alimovdev.datar.service.ScheduleType.*;
 
 
 @Slf4j
 @Service
 @Component
+@EnableScheduling
 public class TelegramBotCommands extends TelegramLongPollingBot {
     private final AppointmentRepository appointmentRepository;
 
@@ -60,6 +64,8 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
     private final Map<String, String> inputtedPhoneNumber = new ConcurrentHashMap<>();
     private final Map<String, String> inputtedClientBirthdate = new ConcurrentHashMap<>();
     private final Map<String, String> registrationPassword = new ConcurrentHashMap<>();
+    //  private final Map<Appointment, SendMessage> approveAppointmentMap = new ConcurrentHashMap<>();
+    private final List<SendMessage> approveAppointment = new CopyOnWriteArrayList<>();
 
     /**
      * Строки-константы, добавляемые в Map tempData. В процессе взаимодействия с ботом может понадобиться ввод некоторых
@@ -129,17 +135,36 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
     final String callbackData_putAwaitList = "PAL";
     final String callbackData_awaitList = "AAL";
     final String callbackData_delClientRemark = "DCR";
+    final String callbackData_appointmentInfo = "AIN";
+    final String callbackData_approveDelAppoint = "ADS";
+    final String callbackData_delAppoint = "DAP";
+    final String callbackData_addNewAdmin = "ANA";
+    final String callbackData_adminForDel = "AFD";
+    final String callbackData_delMyAdmin = "DMA";
+    final String callbackData_delAdmin = "DAD";
+    final String callbackData_approveDelAdmin = "ADA";
+    final String callbackData_isAdmin = "ISA";
+    final String callbackData_approveLeave = "ALE";
+    final String callbackData_approveDelMyAdmin = "AAD";
+    final String callbackData_approveDelClient = "ARC";
+    final String callbackData_deleteMessage = "DLM";
+    final String callbackData_showAwaitList = "SAL";
+    final String callbackData_chooseTimeZone = "CTZ";
+    final String callbackData_sendMessageTime = "TSM";
+    final String callbackData_chooseSendTime = "CSM";
+
+
+    final String callbackData_confirmAppointment = "CAP";
+    final String callbackData_refuseAppointment = "RAP";
 
 
     final String callData_clientsList = "CLILIST";
-
+    //  private final String[] textsAdministratorBaseMenu = {"Добавить нового администратора", "Удалить администратора", callbackData_backToSpecMenu};
 
     final String callbackData_delOrRepair = "Удаление/восстановление данных"; // Подтверждение удаления специалиста
     final String callbackData_addNewSpec = "Добавить нового специалиста";
     final String callbackData_specSchedule = "Расписание специалиста";
     final String callbackData_delSpec = "Удалить специалиста";
-    final String callbackData_addNewAdmin = "Добавить нового администратора";
-    final String callbackData_delAdmin = "Удалить администратора";
     final String callbackData_workTime = "Часы работы";
     final String callbackData_timeZone = "Часовой пояс";
     final String callbackData_mySchedule = "Мой график работы";
@@ -149,7 +174,8 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
     final String callbackData_addClient = "Добавить нового клиента";
     final String callbackData_lookAppointment = "Посмотреть запись";
     final String callbackData_workWithClient = "Работа с базой клиентов";
-    final String callbackData_workWithAdmin = "Администратор/администраторы";
+    final String callbackData_workWithAdmin = "Администратор";
+    final String callbackData_workWithAdministrators = "Администраторы";
     final String callbackData_organizationName = "Название организации";
     final String callbackData_choseSpecialist = "Выбрать специалиста";
     final String callbackData_workWithSpecialist = "Работа с базой специалистов"; // "Меню работы с базой специалистов" "Работа с базой специалистов"
@@ -157,8 +183,10 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
     final String callbackData_delegateOwnership = "Передать права владения БД";
 
 
+
     static final String backText1 = "⏎  Назад в меню";
     static final String backText2 = "⏎  Назад";
+    static final String okText = "𝐎𝐊";
 
     static final String callbackData_delMyData = "Удалить мои данные";
     static final String callbackData_regAsSpecialist = "#regspec";
@@ -173,15 +201,6 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
     static final String callbackData_userAppointment = "usrAppointment";
 
 
-    // private final String[] textsClientChangeMenu = {"Фамилия клиента", "Имя клиента", "Отчество клиента", "Телефонный номер", "", "", ""};
-    private final String[] textsSpecialistSchedule = {"Четный/нечетный график", "Фиксированный график", "Скользящий график", "Сменный график", callbackData_backWorkWithSpecialist};
-    private final String[] textsSBaseMenu = {callbackData_addNewSpec, callbackData_specSchedule, callbackData_delSpec, callbackData_backToAdminMenu};
-    private final String[] textsAdministratorBaseMenu = {"Добавить нового администратора", "Удалить администратора", callbackData_backToSpecMenu};
-    private final String[] textsOwnerAdminSettings = {"Часы работы", "Часовой пояс", "Название организации", "Время рассылки сообщений", callbackData_delOrRepair, "Подписка", callbackData_backToAdminMenu};
-    private final String[] textsOwnerSpecSettings = {"Часы работы", "Часовой пояс", callbackData_mySchedule, "Время рассылки сообщений", callbackData_delOrRepair, "Подписка", callbackData_backToSpecMenu};
-    private final String[] textsForSpecMenu = {"Записать на прием", callbackData_addClient, "Посмотреть запись", callbackData_workWithClient, "Администратор/администраторы", callbackData_specSettings};
-    private final String[] textsForAdminMenu = {callbackData_choseSpecialist, "Записать на прием", callbackData_addClient, "Посмотреть запись", callbackData_workWithClient, callbackData_workWithSpecialist, callbackData_workWithAdmin, callbackData_adminSettings};
-
     final int specialistToClientIndex = 0; // диапазон 0-1
     final int adminToClientIndex = 2; // диапазон 2-3
     final int specialistToAdminIndex = 4; // диапазон 4-5
@@ -189,7 +208,7 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
     final int adminToAdminIndex = 8; // диапазон 8-9
 
 
-    private final String err999 = "Error 999";
+    private final String err900 = "Error 900";
 
 
     @Autowired
@@ -236,14 +255,14 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
                     try {
                         long longAppenderId = Long.parseLong(receiveIdByPassword(messageText));
                         String stringAppenderId = receiveIdByPassword(messageText);
-                        int lastIndex = Integer.parseInt(String.valueOf(messageText.charAt(4)));
+                        int registerIndex = Integer.parseInt(String.valueOf(messageText.charAt(3)));
                         Client client;
                         Specialist specialist;
                         Administrator administrator;
                         SendMessage messageToUser = new SendMessage(stringChatId, "✹ㅤВы авторизованы.");
                         messageToUser.setReplyMarkup(botMethod.receiveOneButtonMenu("\uD835\uDC0E\uD835\uDC0A", stringChatId + callbackData_delMessage + intMessageId));
 
-                        switch (lastIndex) {
+                        switch (registerIndex) {
                             case specialistToClientIndex, 1 -> { // регистрация клиента специалистом
                                 if (savedClientId.get(stringAppenderId) != null) {
                                     client = clientRepository.findById(savedClientId.get(stringAppenderId)).get();
@@ -270,45 +289,21 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
                             }
                             case specialistToAdminIndex, 5 -> { // регистрация специалистом администратора
                                 if (longChatId != longAppenderId && adminRepository.findById(longChatId).isPresent()) {
-                                    specialist = specialistRepository.findById(longAppenderId).get();
-                                    administrator = adminRepository.findById(longChatId).get();
-                                    String specialistIdList = administrator.getSpecialistIdList() + stringAppenderId + "/";
-                                    administrator.setSpecialistIdList(specialistIdList);
-                                    administrator.setOwnerId(specialist.getOwnerId());
-                                    administrator.setOwner(false);
-                                    administrator.setSpecialistIdList(longAppenderId + "/");
-                                    adminRepository.save(administrator);
+                                    addAdministratorToSpecialist(longAppenderId, longChatId);
                                     invalidatePasswordData(messageText, stringAppenderId);
                                     executeSendMessage(messageToUser);
                                 }
                             }
                             case adminToSpecialistIndex, 7 -> {// регистрация специалиста администратором
                                 if (longChatId != longAppenderId && specialistRepository.findById(longChatId).isPresent()) {
-                                    administrator = adminRepository.findById(longAppenderId).get();
-                                    specialist = specialistRepository.findById(longChatId).get();
-                                    specialist.setOwnerId(administrator.getOwnerId());
-                                    specialist.setOwner(false);
-                                    specialist.setWorkTimeLength(administrator.getWorkTimeLength());
-                                    specialistRepository.save(specialist);
-                                    String specialistIdList = administrator.getSpecialistIdList() + longChatId + "/";
-                                    List<Administrator> administrators = adminRepository.findByOwnerId(administrator.getOwnerId());
-                                    for (Administrator adm : administrators) {
-                                        adm.setSpecialistIdList(specialistIdList);
-                                        adminRepository.save(adm);
-                                    }
+                                    addSpecialistToAdministrators(longAppenderId, longChatId);
                                     invalidatePasswordData(messageText, stringAppenderId);
                                     executeSendMessage(messageToUser);
                                 }
                             }
                             case adminToAdminIndex, 9 -> {// регистрация администратора администратором
                                 if (longChatId != longAppenderId && adminRepository.findById(longChatId).isPresent()) {
-                                    Administrator superAdministrator = adminRepository.findById(longAppenderId).get();
-                                    administrator = adminRepository.findById(longChatId).get();
-                                    administrator.setOwnerId(administrator.getOwnerId());
-                                    administrator.setOwner(false);
-                                    administrator.setCurrentSpecialistId(superAdministrator.getCurrentSpecialistId());
-                                    administrator.setSpecialistIdList(superAdministrator.getSpecialistIdList());
-                                    adminRepository.save(administrator);
+                                    addAdministratorToAdministrators(longAppenderId, longChatId);
                                     invalidatePasswordData(messageText, stringAppenderId);
                                     executeSendMessage(messageToUser);
                                 }
@@ -321,7 +316,6 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
                     // log
                 }
             }
-
 
             /**
              * В процессе взаимодействия с ботом может понадобиться ввод некоторых данных в чат и до момента
@@ -339,7 +333,7 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
                     }
                     case input_spec_patronymic -> {
                         if (verifyRegisterData(longChatId, stringChatId, messageText, "", inputtedPatronymic, "")) {
-                            tempData.remove(stringChatId);
+
                             registerSpecialist(longChatId, stringChatId);
                         }
                     }
@@ -351,7 +345,7 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
                     }
                     case input_admin_patronymic -> {
                         if (verifyRegisterData(longChatId, stringChatId, messageText, "", inputtedPatronymic, "")) {
-                            tempData.remove(stringChatId);
+                            //  tempData.remove(stringChatId);
                             registerAdministrator(longChatId, stringChatId);
                         }
                     }
@@ -368,7 +362,7 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
                         verifyPhoneNumber(longChatId, stringChatId, messageText, "Введите дату и год рождения клиента в формате 01.01.2020 или символ - ", inputtedPhoneNumber, input_client_birthdate);
                     }
                     case input_client_birthdate -> {
-                        tempData.remove(stringChatId);
+                        //  tempData.remove(stringChatId);
                         if (verifyBirthDayDate(longChatId, stringChatId, messageText, "", inputtedClientBirthdate, "")) {
                             if (savedClientId.get(stringChatId) != null) {
                                 updateClient(longChatId, stringChatId, savedClientId.get(stringChatId), savedClientTgId.get(stringChatId));
@@ -387,28 +381,34 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
                             client.setClientNotes(note + "#" + noteAddition + "/");
                             clientRepository.save(client);
                         }
-                        tempData.remove(stringChatId);
+                        //  tempData.remove(stringChatId);
                         savedClientId.remove(stringChatId);
                     }
-
                 }
+                //   tempData.remove(stringChatId);
             }
-
 
             // Удаление отправленных в чат сообщений (чтобы не засорять экран чата)
             executeDeleteMessage(new DeleteMessage(stringChatId, intMessageId));
 
             if (messageText.equals("3") || messageText.equals("/start")) { // клавиатура
-                tempData.put(stringChatId, "");
+                //     tempData.put(stringChatId, "");
                 savedMessageId.put(stringChatId, intMessageId);
                 if (adminRepository.existsById(longChatId)) {
-                    String textForMenu = createTextForMenu(longChatId, stringChatId);
-                    executeSendMessage(botMethod.createBaseMenu(stringChatId, textForMenu, textsForAdminMenu));
+                    String textForMessage = createTextForMenu(longChatId, stringChatId);
+                    SendMessage sendMessage = new SendMessage(stringChatId, textForMessage);
+                    sendMessage.setReplyMarkup(createAdminMenu());
+                    executeSendMessage(sendMessage);
+
                 } else if (specialistRepository.existsById(longChatId)) {
                     String textForMenu = createTextForMenu(longChatId, stringChatId);
-                    executeSendMessage(botMethod.createBaseMenu(stringChatId, textForMenu, textsForSpecMenu));
+                    SendMessage sendMessage = new SendMessage(stringChatId, textForMenu);
+                    sendMessage.setReplyMarkup(createSpecialistMenu());
+                    executeSendMessage(sendMessage);
+
                 } else if (userRepository.existsById(longChatId)) {
                     executeSendMessage(botMethod.createUserMenu(stringChatId, textToUser));
+
                 } else {
                     User user = new User();
                     user.setId(longChatId);
@@ -417,61 +417,57 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
                     executeSendMessage(botMethod.createUserMenu(stringChatId, textToUser));
                 }
             } else if (messageText.equals("/deletedata")) { // Заглушка для удаления сущностей. Позднее функционал будет переделан на адекватные методы с отношениями между сущностями
-                boolean isOwner = false;
                 if (adminRepository.existsById(longChatId)) {
-                    Administrator administrator = adminRepository.findById(longChatId).get();
-                    List<Specialist> specialists = specialistRepository.findByOwnerId(administrator.getOwnerId());
-                    for (Specialist spc : specialists) {
-                        String ids = spc.getAdministratorIdList();
-                        spc.setAdministratorIdList(ids.replace(stringChatId + "/", ""));
-                        specialistRepository.save(spc);
-                    }
-                    if (administrator.isOwner()) {
-                        isOwner = true;
-                        specialists = specialistRepository.findByOwnerId(administrator.getOwnerId());
-                        List<Administrator> administrators = adminRepository.findByOwnerId(administrator.getOwnerId());
-                        for (Specialist spc : specialists) {
-                            spc.setOwner(true);
-                            spc.setOwnerId(spc.getSpecialistId());
-                            specialistRepository.save(spc);
-                        }
-                        for (Administrator adm : administrators) {
-                            adm.setOwner(true);
-                            adm.setOwnerId(String.valueOf(adm.getId()));
-                            adminRepository.save(adm);
-                        }
-                    }
-                    adminRepository.deleteById(longChatId);
+                    deleteAdministratorData(longChatId);
+
                 } else if (specialistRepository.existsById(longChatId)) {
-                    Specialist specialist = specialistRepository.findById(longChatId).get();
-                    List<Administrator> administrators = adminRepository.findByOwnerId(specialist.getOwnerId());
-                    for (Administrator adm : administrators) {
-                        String ids = adm.getSpecialistIdList();
-                        adm.setSpecialistIdList(ids.replace(stringChatId + "/", ""));
-                        adm.setCurrentSpecialistId("");
-                        adminRepository.save(adm);
-                    }
-                    if (specialist.isOwner()) {
-                        isOwner = true;
-                        for (Administrator adm : administrators) {
-                            adm.setOwner(true);
-                            adm.setOwnerId(String.valueOf(adm.getId()));
-                            adminRepository.save(adm);
-                        }
-                    }
-                    specialistRepository.deleteById(longChatId);
+                    deleteSpecialistData(longChatId);
+
                 } else if (userRepository.existsById(longChatId)) {
-                    userRepository.deleteById(longChatId);
-                }
-                if (isOwner) {
-                    // Удалить все связанные с администратором appointment
-                    List<Appointment> appointment = appointmentRepository.findByOwnerId(stringChatId);
-                    //  appointmentRepository.deleteAll(appointment);
-                    // Удалить все связанные с администратором учетки клиентов
-                    List<Client> clients = clientRepository.findByOwnerId(stringChatId);
-                    //  clientRepository.deleteAll(clients);
+                    deleteUserData(longChatId);
                 }
                 executeSendMessage(new SendMessage(stringChatId, "Все данные учетной записи были удалены.")); // Заглушка для удаления сущностей. Позднее функционал будет переделан на адекватные методы с отношениями между сущностями
+
+            } else if (messageText.equals("1")) {
+                Administrator administrator = adminRepository.findById(longChatId).get();
+                List<Specialist> specialists = administrator.getSpecialists();
+                System.out.println("TEST 1 >>>>>>>>" + specialists.toString()); //TODO
+
+            } else if (messageText.equals("2")) {
+                Specialist specialist = specialistRepository.findById(longChatId).get();
+                List<Administrator> administrators = specialist.getAdministrators();
+                System.out.println("TEST 2 >>>>>>>>" + administrators.toString()); //TODO
+
+            } else if (messageText.equals("5")) {
+                long id = registerTestSpecialist();
+                addSpecialistToAdministrators(longChatId, id);
+                Specialist specialist = specialistRepository.findById(id).get();
+                System.out.println("TEST 5 >>>>>>>>" + specialist); //TODO
+
+            } else if (messageText.contains("с")) {
+                try {
+                    int time = Integer.parseInt((messageText.replace("с", ""))); //TODO
+                    Specialist specialist = specialistRepository.findById(longChatId).get();
+                    specialist.setSendTime(time);
+                    specialistRepository.save(specialist);
+                } catch (NumberFormatException e) {
+                    System.out.println("nfe");
+                }
+
+            } else if (messageText.length() == 3) {
+                try {
+                    long id = Long.parseLong(messageText);
+                    Specialist specialist = specialistRepository.findById(id).get();
+                    List<Administrator> administrators = specialist.getAdministrators();
+                    System.out.println("TEST 6 >>>>>>>>" + administrators.toString()); //TODO
+                } catch (NumberFormatException e) {
+                    System.out.println("nfe"); //TODO
+                }
+
+            } else if (messageText.equals("7")) {
+                List<Specialist> specialists = specialistRepository.findAll();
+                System.out.println("TEST 7 >>>>>>>>" + specialists); //TODO
+
             }
 
 
@@ -509,45 +505,75 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
 
             } else if (callbackData.equals(callbackData_backToAdminMenu)) {
                 String textForMenu = createTextForMenu(longChatId, stringChatId);
-                executeEditMessageText(botMethod.createBaseMenu(longChatId, messageId, textForMenu, textsForAdminMenu));
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, textForMenu);
+                editMessageText.setReplyMarkup(createAdminMenu());
+                executeEditMessageText(editMessageText);
 
             } else if (callbackData.equals(callbackData_backToSpecMenu)) {
                 String textForMenu = createTextForMenu(longChatId, stringChatId);
-                executeEditMessageText(botMethod.createBaseMenu(longChatId, messageId, textForMenu, textsForSpecMenu));
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, textForMenu);
+                editMessageText.setReplyMarkup(createSpecialistMenu());
+                executeEditMessageText(editMessageText);
 
             } else if (callbackData.equals(callbackData_addClient)) {
                 createRegisterClientProcess(longChatId, stringChatId, messageId);
 
             } else if (callbackData.equals(callbackData_choseSpecialist)) {
-                List<Specialist> specialistIdList = specialistRepository.findByOwnerId(adminRepository.findById(longChatId).get().getOwnerId());
-                if (!specialistIdList.isEmpty()) { //   777/333/111/
-                    Map<String, Long> specialistsMap = specialistIdList.stream().collect(Collectors.toMap(Specialist::receiveShortName, Specialist::getId));
-                    executeEditMessageText(botMethod.createUtilMenu(longChatId, messageId, specialistsMap, "Выберите Специалиста", callbackData_specId));
+                Administrator administrator = adminRepository.findById(longChatId).get();
+                List<Specialist> specialistIdList = adminRepository.findById(longChatId).get().getSpecialists();
+                if (!administrator.isOwner()) {
+                    specialistIdList.addAll(administrator.getSpecialists_owners());
+                }
+                if (!specialistIdList.isEmpty()) {
+                    Map<String, String> specialistsMap = new LinkedHashMap<>();
+                    for (int i = 0; i < specialistIdList.size(); i++) {
+                        specialistsMap.put((i + 1) + ". " + specialistIdList.get(i).receiveShortName(),
+                                specialistIdList.get(i).getId() + callbackData_specId);
+                    }
+                    specialistsMap.put(backText1, callbackData_backToAdminMenu);
+                    executeEditMessageText(botMethod.createUtilMenu(longChatId, messageId, "Выберите Специалиста", specialistsMap));
                 } else {
                     EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, "У вас нет специалистов");
-                    editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(callbackData_back, callbackData_backToAdminMenu));
+                    editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(backText1, callbackData_backToAdminMenu));
                     executeEditMessageText(editMessageText);
                 }
-
             } else if (callbackData.contains(callbackData_specId)) {
                 String data = callbackData.replace(callbackData_specId, "");
-                String name = specialistRepository.findById(Long.parseLong(data)).get().receiveShortName();
+                Specialist specialist = specialistRepository.findById(Long.parseLong(data)).get();
+                String name = specialist.receiveShortName();
                 Administrator administrator = adminRepository.findById(longChatId).get();
-                administrator.setCurrentSpecialistId(data);
+                if (!administrator.isOwner()) {
+                    administrator.setOwnerId(specialist.getOwnerId());
+                }
+                administrator.setCurrentSpecialistId(Long.parseLong(data));
                 adminRepository.save(administrator);
                 EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, "Выбран специалист " + name);
                 editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(callbackData_back, callbackData_backToAdminMenu));
                 executeEditMessageText(editMessageText);
+
             } else if (callbackData.equals("Посмотреть запись")) {
-                executeEditMessageText(receiveAppointment(longChatId, messageId, stringChatId));
+                executeEditMessageText(appointmentMenu(longChatId, messageId));
+
             } else if (callbackData.equals("Записать на прием")) {
                 String mainMenuData = backToMenu(longChatId);
                 String textForMessage = createTextForClientSearch(longChatId);
-                executeEditMessageText(botMethod.searchClient(longChatId, messageId, textForMessage, callbackData_clientFirst, callData_clientsList, mainMenuData));
+                if (textForMessage.equals("Специалист не выбран.")) {
+                    EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, textForMessage);
+                    editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(backText2, mainMenuData));
+                    executeEditMessageText(editMessageText);
+                } else {
+                    executeEditMessageText(botMethod.searchClient(longChatId, messageId, textForMessage, callbackData_clientFirst, callData_clientsList, mainMenuData));
+                }
 
             } else if (callbackData.equals(callData_clientsList)) {
                 String textForMessage = createTextForClientSearch(longChatId);
-                showAllClients(longChatId, messageId, textForMessage, callbackData_clientIdAppointment);
+                if (textForMessage.equals("Специалист не выбран.")) {
+                    EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, textForMessage);
+                    editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(backText2, backToMenu(longChatId)));
+                    executeEditMessageText(editMessageText);
+                } else {
+                    showAllClients(longChatId, messageId, textForMessage, callbackData_clientIdAppointment);
+                }
 
             } else if (callbackData.contains(callbackData_clientFirst)) {
                 String dataText = callbackData.replace(callbackData_clientFirst, "");
@@ -602,11 +628,11 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
                     textForMessage = createAppointmentText(administrator.getCurrentSpecialistId(), date);
                 } else {
                     mainMenuData = callbackData_backToSpecMenu;
-                    textForMessage = createAppointmentText(stringChatId, date);
+                    textForMessage = createAppointmentText(longChatId, date);
                 }
                 textForMessage += "\nВыберите время для записи:";
                 InlineKeyboardMarkup inlineKeyboardMarkup = new InlineKeyboardMarkup();
-                List<List<InlineKeyboardButton>> rowsInline = new ArrayList<>(); // коллекция коллекций с горизонтальным рядом кнопок, создаёт вертикальный ряд кнопок
+                List<List<InlineKeyboardButton>> rowsInline = new ArrayList<>();
                 List<InlineKeyboardButton> rowInlineButtonBack = new ArrayList<>();
                 int beginHour = isToday ? Integer.parseInt(formatHour.format(LocalTime.now())) + 1 : 8;
                 int endHour = 22;
@@ -636,7 +662,7 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
 
             } else if (callbackData.contains(callbackData_chooseBegin)) {
                 String time = callbackData.replace(callbackData_chooseBegin, ""); // 26.10.2025 - 09:00
-                String mainMenuData = adminRepository.existsById(longChatId) ? callbackData_backToAdminMenu : callbackData_backToSpecMenu; //TODO
+                String mainMenuData = adminRepository.existsById(longChatId) ? callbackData_backToAdminMenu : callbackData_backToSpecMenu;
                 String textForMessage = "Выберите время окончания " + time;
                 String[] hourAndMinute = time.split(" - ")[1].split(":");
                 int beginHour = Integer.parseInt(hourAndMinute[0]);
@@ -649,7 +675,6 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
                 } else {
                     beginMinute += 10;
                 }
-
                 InlineKeyboardMarkup inlineKeyboardMarkup = new InlineKeyboardMarkup();
                 List<List<InlineKeyboardButton>> rowsInline = new ArrayList<>(); // коллекция коллекций с горизонтальным рядом кнопок, создаёт вертикальный ряд кнопок
                 List<InlineKeyboardButton> rowInlineButtonBack = new ArrayList<>();
@@ -679,29 +704,47 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
                 executeEditMessageText(editMessageText);
 
             } else if (callbackData.contains(callbackData_chooseEnd)) {
-                String timeData = callbackData.replace(callbackData_chooseEnd, ""); // 26.10.2025 - 09:00/09:10
                 Client client = clientRepository.findById(savedClientId.get(stringChatId)).get();
+                String timeData = callbackData.replace(callbackData_chooseEnd, ""); // 26.10.2025 - 09:00/09:10
+                Appointment matchAppointment = null;
                 List<Appointment> appointments;
-                String existAppointmentTime = "";
-                boolean isWrongAppointment = false;
-
                 DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd.MM.yyyy - HH:mm");
                 String[] splitTimeData = timeData.split(" - ");
                 String date = splitTimeData[0]; //  26.10.2025
+                String textForMessage;
+                String specialistName;
+                int sendTime;
+                int timeZone;
+                long ownerId;
+                long specialistId;
+
+                InlineKeyboardMarkup inlineKeyboardMarkup = new InlineKeyboardMarkup();
+                List<List<InlineKeyboardButton>> rowsInline = new ArrayList<>(); // коллекция коллекций с горизонтальным рядом кнопок, создаёт вертикальный ряд кнопок
+                List<InlineKeyboardButton> firstRowInlineButton = new ArrayList<>();
+
                 LocalDateTime beginTime = LocalDateTime.parse(date + " - " + splitTimeData[1].split("/")[0], formatter); //09:00
                 LocalDateTime endTime = LocalDateTime.parse(date + " - " + splitTimeData[1].split("/")[1], formatter); //09:10
 
                 if (adminRepository.existsById(longChatId)) {
-                    String specialistId = adminRepository.findById(longChatId).get().getCurrentSpecialistId();
-                    appointments = appointmentRepository.findBySpecialistId(specialistId);
-
+                    Administrator administrator = adminRepository.findById(longChatId).get();
+                    ownerId = administrator.getOwnerId();
+                    specialistId = administrator.getCurrentSpecialistId();
+                    appointments = appointmentRepository.findBySpecialistId(administrator.getCurrentSpecialistId());
+                    sendTime = administrator.getSendTime() + administrator.getTimeZone();
+                    timeZone = administrator.getTimeZone();
+                    specialistName = specialistRepository.findById(specialistId).get().receiveFullName();
                 } else {
-                    appointments = appointmentRepository.findBySpecialistId(stringChatId);
+                    Specialist specialist = specialistRepository.findById(longChatId).get();
+                    appointments = appointmentRepository.findBySpecialistId(specialist.getId());
+                    ownerId = specialist.getOwnerId();
+                    specialistId = specialist.getId();
+                    sendTime = specialist.getSendTime() + specialist.getTimeZone();
+                    timeZone = specialist.getTimeZone();
+                    specialistName = specialist.receiveFullName();
                 }
                 appointments.addAll(appointmentRepository.findByClientId(client.getId()));
 
                 for (Appointment ap : appointments) {
-                    // String[] splitAppointmentTimeData = ap.getAppointmentDateTime().replace("#", "").split(" - ");
                     String[] splitAppointmentTimeData = ap.getAppointmentDateTime().split(" - ");
                     String appointmentDate = splitAppointmentTimeData[0]; //  26.10.2025
                     LocalDateTime appointmentBeginTime = LocalDateTime.parse(appointmentDate + " - " + splitAppointmentTimeData[1].split("/")[0], formatter); //09:00
@@ -710,45 +753,36 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
                     if (beginTime.isAfter(appointmentBeginTime) && beginTime.isBefore(appointmentEndTime) ||
                             endTime.isAfter(appointmentBeginTime) && endTime.isBefore(appointmentEndTime) ||
                             beginTime.isBefore(appointmentBeginTime) && endTime.isAfter(appointmentEndTime)) {
-                        existAppointmentTime = appointmentDate + " - " + splitAppointmentTimeData[1].split("/")[0];
-                        isWrongAppointment = true;
+                        matchAppointment = ap;
                         break;
                     }
                 }
 
-                String textForMessage = "Клиент записан на " + timeData;
-                String mainMenuData = backToMenu(longChatId);
-                Appointment appointment = new Appointment();
-                if (specialistRepository.existsById(longChatId)) {
-                    Specialist specialist = specialistRepository.findById(longChatId).get();
-                    appointment.setOwnerId(specialist.getOwnerId());
-                    appointment.setSpecialistId(stringChatId);
-                } else {
-                    Administrator administrator = adminRepository.findById(longChatId).get();
-                    appointment.setOwnerId(administrator.getOwnerId());
-                    appointment.setSpecialistId(administrator.getCurrentSpecialistId());
-                }
-                appointment.setClientId(savedClientId.get(stringChatId)); // TODO Удалить данные перед началом процесса записи
-                appointment.setConfirmAppointment(UNCERTAIN.getStatus());
-                appointment.setAppointmentNote("");
-                appointment.setWaitNearAppointment(false);
-                //  appointment.setAppointmentDateTime(timeData + "#"); // 26.10.2025 - 09:00/09:10#
-                appointment.setAppointmentDateTime(timeData); // 26.10.2025 - 09:00/09:10
-
-                InlineKeyboardMarkup inlineKeyboardMarkup = new InlineKeyboardMarkup();
-                List<List<InlineKeyboardButton>> rowsInline = new ArrayList<>(); // коллекция коллекций с горизонтальным рядом кнопок, создаёт вертикальный ряд кнопок
-                List<InlineKeyboardButton> firstRowInlineButton = new ArrayList<>();
-
-                InlineKeyboardButton menuButton = new InlineKeyboardButton(mainMenuData);
-                menuButton.setCallbackData(mainMenuData);
-                firstRowInlineButton.add(menuButton);
-
-                if (isWrongAppointment) {
-                    textForMessage = "Нельзя записать клиента на данную дату, т.к. у клиента или специалиста уже имеется запись на время: " + existAppointmentTime;
+                if (matchAppointment != null) {
+                    Specialist specialistFromAppointment = specialistRepository.findById(matchAppointment.getSpecialistId()).get(); // TODO No value present
+                    textForMessage = "Выбраны дата и время: " + timeData.replace("-", "с").replace("/", " до ") + "\n❗ Клиент уже имеет запись у специалиста: " +
+                            specialistFromAppointment.receiveFullName() + " на дату " + matchAppointment.getAppointmentDateTime().replace("-", "в").replace("/", " до ");
                     InlineKeyboardButton backButton = new InlineKeyboardButton("Назад");
                     backButton.setCallbackData(callbackData_chooseBegin + date + " - " + splitTimeData[1].split("/")[0]);
                     firstRowInlineButton.add(backButton);
                 } else {
+                    textForMessage = "Клиент записан на: " + timeData.replace("-", "с").replace("/", " до ");
+                    String mainMenuData = backToMenu(longChatId);
+                    Appointment appointment = new Appointment();
+                    appointment.setOwnerId(ownerId);
+                    appointment.setSpecialistId(specialistId);
+                    appointment.setClientId(savedClientId.get(stringChatId)); // TODO Удалить данные перед началом процесса записи
+                    appointment.setClientTgId(client.getTgId());
+                    appointment.setConfirmAppointment(ConfirmAppointmentStatus.UNDEFINED.getStatusLabel());
+                    appointment.setSendTime(sendTime);
+                    appointment.setSpecialistName(specialistName);
+                    appointment.setAppointmentNote("");
+                    appointment.setTimeZone(timeZone);
+                    appointment.setWaitNearAppointment(false);
+                    appointment.setAppointmentDateTime(timeData); // 26.10.2025 - 09:00/09:10
+                    InlineKeyboardButton menuButton = new InlineKeyboardButton(mainMenuData);
+                    menuButton.setCallbackData(mainMenuData);
+                    firstRowInlineButton.add(menuButton);
                     appointmentRepository.save(appointment);
                 }
                 rowsInline.add(firstRowInlineButton);
@@ -758,17 +792,49 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
                 executeEditMessageText(editMessageText);
 
             } else if (callbackData.equals(callbackData_specSettings)) {
-                executeEditMessageText(botMethod.createBaseMenu(longChatId, messageId, "Настройки специалиста", textsOwnerSpecSettings));
-
+                boolean isOwner = specialistRepository.findById(longChatId).get().isOwner();
+                Map<String, String> buttonMap = new LinkedHashMap<>();
+                buttonMap.put("Часы работы", "Часы работы");
+                buttonMap.put("График работы", callbackData_specSchedule);
+                if (isOwner) {
+                    buttonMap.put("Часовой пояс", "Часовой пояс");
+                    buttonMap.put("Время рассылки сообщений", callbackData_sendMessageTime);
+                    buttonMap.put(callbackData_delOrRepair, callbackData_delOrRepair);
+                    buttonMap.put("Передать права владельца", "Передать права");
+                    buttonMap.put("Пароль учетной записи", "Пароль записи");
+                    buttonMap.put("Подписка", "Подписка");
+                }
+                buttonMap.put("Изменить мои данные", "Изменить мои данные");
+                buttonMap.put("Удалить мой профиль", "Удалить мой профиль");
+                buttonMap.put(backText1, callbackData_backToSpecMenu);
+                EditMessageText editMessageText = botMethod.createUtilMenu(longChatId, messageId, "Настройки специалиста", buttonMap);
+                executeEditMessageText(editMessageText);
 
             } else if (callbackData.equals(callbackData_adminSettings)) {
-                executeEditMessageText(botMethod.createBaseMenu(longChatId, messageId, "Настройки администратора", textsOwnerAdminSettings));
+                boolean isOwner = adminRepository.findById(longChatId).get().isOwner();
+                Map<String, String> cliSettingsMenu = new LinkedHashMap<>();
 
-            } else if (callbackData.equals("Часы работы")) {
+                if (isOwner) {
+                    cliSettingsMenu.put("Часы работы", "Часы работы" + callbackData_isAdmin);
+                    cliSettingsMenu.put("Часовой пояс", "Часовой пояс");
+                    cliSettingsMenu.put("Название организации", "Название организации" + callbackData_isAdmin);
+                    cliSettingsMenu.put("Время рассылки сообщений", callbackData_sendMessageTime);
+                    cliSettingsMenu.put(callbackData_delOrRepair, callbackData_delOrRepair + callbackData_isAdmin);
+                    cliSettingsMenu.put("Передать права владельца", "Передать права" + callbackData_isAdmin);
+                    cliSettingsMenu.put("Пароль учетной записи", "Пароль записи" + callbackData_isAdmin);
+                    cliSettingsMenu.put("Подписка", "Подписка" + callbackData_isAdmin);
+                }
+                cliSettingsMenu.put("Изменить мои данные", "Изменить мои данные" + callbackData_isAdmin);
+                cliSettingsMenu.put("Удалить мой профиль", "Удалить мой профиль" + callbackData_isAdmin);
+                cliSettingsMenu.put(backText1, callbackData_backToAdminMenu);
+                EditMessageText editMessageText = botMethod.createUtilMenu(longChatId, messageId, "Настройки администратора", cliSettingsMenu);
+                executeEditMessageText(editMessageText);
+
+            } else if (callbackData.contains("Часы работы")) {
                 String workTime;
                 String backData;
 
-                if (adminRepository.existsById(longChatId)) {
+                if (callbackData.contains(callbackData_isAdmin)) {
                     Administrator administrator = adminRepository.findById(longChatId).get();
                     backData = callbackData_adminSettings;
                     workTime = administrator.getWorkTimeLength().replace("/", ":00 до ");
@@ -815,7 +881,7 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
                     Administrator administrator = adminRepository.findById(longChatId).get();
                     administrator.setWorkTimeLength(date);
                     adminRepository.save(administrator);
-                    for (Specialist spc : specialistRepository.findByOwnerId(stringChatId)) {
+                    for (Specialist spc : specialistRepository.findByOwnerId(longChatId)) {
                         spc.setWorkTimeLength(date);
                         specialistRepository.save(spc);
                     }
@@ -831,31 +897,46 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
                 executeEditMessageText(editMessageText);
 
             } else if (callbackData.contains(callbackData_specSchedule)) {
-                String text;
-                String specialistId = adminRepository.findById(longChatId).get().getCurrentSpecialistId();
-                InlineKeyboardMarkup inlineKeyboardMarkup;
-
-                if (specialistId != null) {
-                    text = "Здесь вы можете установить график работы для специалиста: " + specialistRepository.findById(Long.parseLong(specialistId)).get().receiveFullName();
-                    inlineKeyboardMarkup = botMethod.createButtonSet(textsSpecialistSchedule);
+                EditMessageText editMessageText;
+                Map<String, String> buttonMap = new LinkedHashMap<>();
+                String textForMessage;
+                long specialistId = adminRepository.existsById(longChatId) ?
+                        adminRepository.findById(longChatId).get().getCurrentSpecialistId() : longChatId;
+                if (specialistId != -1) {
+                    Specialist specialist = specialistRepository.findById(specialistId).get();
+                    textForMessage = "Специалист: " + specialist.receiveFullName() + "\nАктуальный график:\n" + EVEN_ODD_DAYS.receiveScheduleString(specialist.getReceptionSchedule()) +
+                            "\n";
+                    buttonMap.put("Четный/нечетный график", "Четный/нечетный график");
+                    buttonMap.put("Фиксированный график", "Фиксированный график");
+                    buttonMap.put("Скользящий график", "Скользящий график");
+                    buttonMap.put("Сменный график", "Сменный график");
                 } else {
-                    text = "Специалист не выбран.";
-                    inlineKeyboardMarkup = botMethod.receiveOneButtonMenu(backText1, callbackData_adminSettings);
+                    textForMessage = "Специалист не выбран.";
                 }
-                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, text);
-                editMessageText.setReplyMarkup(inlineKeyboardMarkup);
+                buttonMap.put(backText2, backToSettings(longChatId));
+                editMessageText = botMethod.createUtilMenu(longChatId, messageId, textForMessage, buttonMap);
                 executeEditMessageText(editMessageText);
 
             } else if (callbackData.equals("Фиксированный график")) {
                 savedWorkSchedule.remove(stringChatId);
-                String specialistId = adminRepository.findById(longChatId).get().getCurrentSpecialistId();
+                long specialistId = adminRepository.existsById(longChatId) ?
+                        adminRepository.findById(longChatId).get().getCurrentSpecialistId() : longChatId;
                 InlineKeyboardMarkup inlineKeyboardMarkup = new InlineKeyboardMarkup();
-                Specialist specialist = specialistRepository.findById(Long.parseLong(specialistId)).get();
+                Specialist specialist = specialistRepository.findById(specialistId).get();
                 String text = "Специалист: " + specialist.receiveShortName() + "\nАктуальный график:\n" + FIX_DAYS.receiveScheduleString(specialist.getReceptionSchedule()) + "\nУстановите часы работы  для каждого дня недели. Для установки выходных дней нажмите клавишу \"Выходной день\".\nВыберите время начала рабочего дня для понедельника.";
                 List<List<InlineKeyboardButton>> rowsInline = createBeginScheduleButtonsSet();
                 inlineKeyboardMarkup.setKeyboard(rowsInline);
                 EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, text);
                 editMessageText.setReplyMarkup(inlineKeyboardMarkup);
+                executeEditMessageText(editMessageText);
+
+            } else if (callbackData.equals("Сменный график")) { //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+                savedWorkSchedule.remove(stringChatId);
+                long specialistId = adminRepository.findById(longChatId).get().getCurrentSpecialistId();
+                Specialist specialist = specialistRepository.findById(specialistId).get();
+                String text = "Специалист: " + specialist.receiveShortName() + "\nАктуальный график:\n" + FIX_DAYS.receiveScheduleString(specialist.getReceptionSchedule()) + "\nСменный график будет реализован в будущем";
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, text);
+                editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(backText2, callbackData_workWithSpecialist));
                 executeEditMessageText(editMessageText);
 
             } else if (callbackData.contains(callbackData_beginWeekWork)) {
@@ -906,8 +987,10 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
                     inlineKeyboardMarkup.setKeyboard(rowsInline);
                 } else if (scheduleTime.length == 6) {
                     savedScheduleTime = savedWorkSchedule.get(stringChatId) + time + FIX_DAYS.getLabel();
-                    Administrator administrator = adminRepository.findById(longChatId).get();
-                    Specialist specialist = specialistRepository.findById(Long.parseLong(administrator.getCurrentSpecialistId())).get();
+                    //Administrator administrator = adminRepository.findById(longChatId).get();
+                    long specialistId = adminRepository.existsById(longChatId) ?
+                            adminRepository.findById(longChatId).get().getCurrentSpecialistId() : longChatId;
+                    Specialist specialist = specialistRepository.findById(specialistId).get();
                     specialist.setReceptionSchedule(savedScheduleTime);
                     specialistRepository.save(specialist);
                     text = FIX_DAYS.receiveScheduleString(savedScheduleTime) + "\nРасписание для специалиста " + specialist.receiveShortName() + " установлено.";
@@ -965,9 +1048,10 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
 
             } else if (callbackData.equals("Четный/нечетный график")) {
                 savedWorkSchedule.remove(stringChatId);
-                String specialistId = adminRepository.findById(longChatId).get().getCurrentSpecialistId();
-                Specialist specialist = specialistRepository.findById(Long.parseLong(specialistId)).get();
-                String text = "Специалист: " + specialist.receiveShortName() + "\nАктуальный график:\n" + EVEN_ODD_DAYS.receiveScheduleString(specialist.getReceptionSchedule()) +
+                long specialistId = adminRepository.existsById(longChatId) ?
+                        adminRepository.findById(longChatId).get().getCurrentSpecialistId() : longChatId;
+                Specialist specialist = specialistRepository.findById(specialistId).get();
+                String text = "Специалист: " + specialist.receiveFullName() + "\nАктуальный график:\n" + EVEN_ODD_DAYS.receiveScheduleString(specialist.getReceptionSchedule()) +
                         "\nВ этом меню вы можете установить рабочее время для четных и нечетных дней месяца.\nУстановите время начала рабочего дня специалиста для нечетного дня месяца.";
                 InlineKeyboardMarkup inlineKeyboardMarkup = new InlineKeyboardMarkup();
                 List<List<InlineKeyboardButton>> rowsInline = createBeginDayButtonsSet(callbackData_endDayWork);
@@ -975,7 +1059,6 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
                 EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, text);
                 editMessageText.setReplyMarkup(inlineKeyboardMarkup);
                 executeEditMessageText(editMessageText);
-
             } else if (callbackData.contains(callbackData_beginDayWork)) {
                 String time = callbackData.replace(callbackData_beginDayWork, "");
                 String text = "";
@@ -985,7 +1068,8 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
                 if (scheduleTime.length == 0) {
                     savedWorkSchedule.put(stringChatId, time + "/");
                     text = "График работы:\n" + EVEN_ODD_DAYS.receiveScheduleString(savedWorkSchedule.get(stringChatId) + EVEN_ODD_DAYS.getLabel()) + "\nУстановите время начала рабочего дня специалиста для четного дня месяца.";
-                    inlineKeyboardMarkup.setKeyboard(beginWorkTime(callbackData_endDayWork));
+                    // inlineKeyboardMarkup.setKeyboard(beginWorkTime(callbackData_endDayWork));
+                    inlineKeyboardMarkup.setKeyboard(createBeginDayButtonsSet(callbackData_endDayWork));
                 } else if (scheduleTime.length == 1) {
                     savedScheduleTime = savedWorkSchedule.get(stringChatId);
                     savedWorkSchedule.put(stringChatId, savedScheduleTime + time + "/");
@@ -1012,6 +1096,7 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
                 EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, text);
                 editMessageText.setReplyMarkup(inlineKeyboardMarkup);
                 executeEditMessageText(editMessageText);
+
             } else if (callbackData.contains(callbackData_weekDay)) {
                 String scheduleData = callbackData.replace(callbackData_weekDay, "");
                 String savedScheduleTime = savedWorkSchedule.get(stringChatId) + scheduleData;
@@ -1029,7 +1114,8 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
                 String savedScheduleTime = savedWorkSchedule.get(stringChatId).
                         substring(0, savedWorkSchedule.get(stringChatId).length() - 1) + EVEN_ODD_DAYS.getLabel();
                 // savedWorkSchedule.put(stringChatId, savedScheduleTime);
-                long specialistId = Long.parseLong(adminRepository.findById(longChatId).get().getCurrentSpecialistId());
+                long specialistId = adminRepository.existsById(longChatId) ?
+                        adminRepository.findById(longChatId).get().getCurrentSpecialistId() : longChatId;
                 Specialist specialist = specialistRepository.findById(specialistId).get();
                 specialist.setReceptionSchedule(savedScheduleTime);
                 specialistRepository.save(specialist);
@@ -1041,8 +1127,9 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
 
             } else if (callbackData.equals("Скользящий график")) {
                 savedWorkSchedule.remove(stringChatId);
-                String specialistId = adminRepository.findById(longChatId).get().getCurrentSpecialistId();
-                Specialist specialist = specialistRepository.findById(Long.parseLong(specialistId)).get();
+                long specialistId = adminRepository.existsById(longChatId) ?
+                        adminRepository.findById(longChatId).get().getCurrentSpecialistId() : longChatId;
+                Specialist specialist = specialistRepository.findById(specialistId).get();
                 String text = "Специалист: " + specialist.receiveShortName() + "\nАктуальный график:\n" + ROLLING_CHART.receiveScheduleString(specialist.getReceptionSchedule()) +
                         "\nВ этом меню вы можете настроить скользящий рабочий график.\nУстановите время начала рабочего дня.";
                 InlineKeyboardMarkup inlineKeyboardMarkup = new InlineKeyboardMarkup();
@@ -1085,7 +1172,8 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
             } else if (callbackData.contains(callbackData_chooseWeekend)) {
                 String schedule = callbackData.replace(callbackData_chooseWeekend, "");
                 String savedScheduleTime = savedWorkSchedule.get(stringChatId) + schedule + ROLLING_CHART.getLabel();
-                long specialistId = Long.parseLong(adminRepository.findById(longChatId).get().getCurrentSpecialistId());
+                long specialistId = adminRepository.existsById(longChatId) ?
+                        adminRepository.findById(longChatId).get().getCurrentSpecialistId() : longChatId;
                 Specialist specialist = specialistRepository.findById(specialistId).get();
                 specialist.setReceptionSchedule(savedScheduleTime);
                 specialistRepository.save(specialist);
@@ -1106,63 +1194,50 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
                 String clientId = callbackData.replace(callbackData_findClientId, ""); // callbackData_findClientId + cli.getId()
                 Client client = clientRepository.findById(Long.parseLong(clientId)).get();
                 boolean awaitAppointment = appointmentRepository.findByClientId(Long.parseLong(clientId)).stream().anyMatch(Appointment::isWaitNearAppointment);
-                String awaitText;
                 tempData.remove(stringChatId);
-
-                String awaitButtonText;
-                if (awaitAppointment) {
-                    awaitText = "да";
-                    //   awaitButtonText = "Убрать из листа ожидания";
-                } else {
-                    awaitText = "нет";
-                    //     awaitButtonText = "Внести в лист ожидания";
-                }
-
+                String awaitText = awaitAppointment ? "да" : "нет";
                 String textForMessage = "Меню для работы с данными клиента: " + client.receiveClientInfo() + "\nВ листе ожидания:  " + awaitText;
 
-                Map<String, String> cliSettingsMenu = new LinkedHashMap<>();
-                cliSettingsMenu.put("Авторизовать клиента", "Авторизовать клиента" + clientId);
-                cliSettingsMenu.put("Внести в лист ожидания", callbackData_putAwaitList + clientId);
-                cliSettingsMenu.put("Добавить заметку", "Добавить заметку" + clientId);
-                cliSettingsMenu.put("Изменить данные", "Изменить данные" + clientId);
-                cliSettingsMenu.put("Удалить клиента", "Удалить клиента" + clientId);
-                cliSettingsMenu.put(callbackData_backToAdminMenu, callbackData_backToAdminMenu);
-                EditMessageText editMessageText = botMethod.createUtilMenu(longChatId, messageId, textForMessage, cliSettingsMenu, "");
+                Map<String, String> buttonMap = new LinkedHashMap<>();
+                buttonMap.put("Авторизовать клиента", "Авторизовать клиента" + clientId);
+                buttonMap.put("Внести в лист ожидания", callbackData_putAwaitList + clientId);
+                buttonMap.put("История посещений", "История посещений" + clientId);
+                buttonMap.put("Добавить заметку", "Добавить заметку" + clientId);
+                buttonMap.put("Изменить данные", "Изменить данные" + clientId);
+                buttonMap.put("Удалить клиента", "Удалить клиента" + clientId);
+                buttonMap.put(callbackData_backToAdminMenu, backToMenu(longChatId));
+                EditMessageText editMessageText = botMethod.createUtilMenu(longChatId, messageId, textForMessage, buttonMap);
                 executeEditMessageText(editMessageText);
 
             } else if (callbackData.contains(callbackData_workWithSpecialist)) {
+                Specialist specialist = null;
                 String textForMessage = "Меню для работы с базой специалистов. Выбранный специалист: ";
-                String specialistId = adminRepository.findById(longChatId).get().getCurrentSpecialistId();
+                Administrator administrator = adminRepository.findById(longChatId).get();
+                long specialistId = administrator.getCurrentSpecialistId();
 
-                if (!specialistId.isEmpty()) {
-                    String specialistName = specialistRepository.findById(Long.parseLong(specialistId)).get().receiveFullName();
-                    textForMessage += specialistName;
-
+                if (specialistId != -1) {
+                    specialist = specialistRepository.findById(specialistId).get();
+                    textForMessage += specialist.receiveFullName();
                 } else {
                     textForMessage += " специалист не выбран.";
                 }
-                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, textForMessage);
-                editMessageText.setReplyMarkup(botMethod.createButtonSet(textsSBaseMenu));
+                Map<String, String> cliSettingsMenu = new LinkedHashMap<>();
+                if (administrator.isOwner()) {
+                    cliSettingsMenu.put(callbackData_addNewSpec, callbackData_addNewSpec);
+                    cliSettingsMenu.put(callbackData_specSchedule, callbackData_specSchedule);
+                    cliSettingsMenu.put(callbackData_delSpec, callbackData_delSpec);
+                } else {
+                    cliSettingsMenu.put(callbackData_specSchedule, callbackData_specSchedule);
+                    if (specialist != null && specialist.isOwner()) {
+                        cliSettingsMenu.put("Отписаться от специалиста", "Отписаться от специалиста");
+                    }
+                }
+                cliSettingsMenu.put(callbackData_backToAdminMenu, callbackData_backToAdminMenu);
+                EditMessageText editMessageText = botMethod.createUtilMenu(longChatId, messageId, textForMessage, cliSettingsMenu);
                 executeEditMessageText(editMessageText);
 
             } else if (callbackData.contains(callbackData_addNewSpec)) {
-                String textForMessage;
-                String password = passwordGeneration(adminToSpecialistIndex);
-                boolean isPasswordExist = !receivePasswordByUserId(stringChatId).equals("null");
-
-                if (isPasswordExist) {
-                    textForMessage = "Вы уже сгенерировали пароль: " + receivePasswordByUserId(stringChatId) + "\nСрок действия пароля еще не истек.";
-                } else if (password.equals(err999)) {
-                    textForMessage = "Ошибка генерации кода...";
-                } else if (adminRepository.findById(longChatId).get().isOwner()) {
-                    textForMessage = "Сгенерирован код для добавления специалиста: " + password;
-                    storePassword(password, stringChatId);
-                } else {
-                    textForMessage = "У вас нет прав для добавления специалиста. Обратитесь к администратору-владельцу базы данных.";
-                }
-                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, textForMessage);
-                editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(backText1, callbackData_workWithSpecialist));
-                executeEditMessageText(editMessageText);
+                createRegistrationMenu(longChatId, messageId, stringChatId, adminToSpecialistIndex, callbackData_workWithSpecialist, "Сгенерирован пароль для регистрации специалиста:  ");
 
             } else if (callbackData.contains(callbackData_delMessage)) {
                 String[] data = callbackData.split(callbackData_delMessage);
@@ -1171,29 +1246,58 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
                 executeDeleteMessage(new DeleteMessage(chatId, messageIdForDel));
 
             } else if (callbackData.equals(callbackData_delSpec)) {
-                String textForMessage;
                 Administrator administrator = adminRepository.findById(longChatId).get();
+                long specialistId = administrator.getCurrentSpecialistId();
+                InlineKeyboardMarkup inlineKeyboardMarkup;
+                String textForMessage;
 
-                if (administrator.isOwner()) {
-                    Specialist specialist = specialistRepository.findById(Long.parseLong(administrator.getCurrentSpecialistId())).get();
-                    textForMessage = "❗ Подтвердите пожалуйста удаление специалиста: " + specialist.receiveFullName();
+                if (specialistId == -1) {
+                    textForMessage = "Специалист не выбран.";
+                    inlineKeyboardMarkup = botMethod.receiveOneButtonMenu(backText1, "Работа с базой специалистов");
                 } else {
-                    textForMessage = "У вас нет прав для добавления специалиста. Обратитесь к администратору-владельцу базы данных.";
+                    Specialist specialist = specialistRepository.findById(administrator.getCurrentSpecialistId()).get();
+                    textForMessage = "❗ Внимание: вместе со специалистом будут также удалены все записи на прием к данному специалисту.\nПодтвердите удаление специалиста: " + specialist.receiveFullName();
+                    inlineKeyboardMarkup = botMethod.receiveTwoButtonsMenu(backText1, "Работа с базой специалистов", "Удалить", callbackData_approveDelSpec);
                 }
                 EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, textForMessage);
-                editMessageText.setReplyMarkup(botMethod.receiveTwoButtonsMenu(backText1, "Работа с базой специалистов", "Удалить", callbackData_approveDelSpec));
+                editMessageText.setReplyMarkup(inlineKeyboardMarkup);
                 executeEditMessageText(editMessageText);
 
             } else if (callbackData.equals(callbackData_approveDelSpec)) {
-                Administrator administrator = adminRepository.findById(longChatId).get();
-                Specialist specialist = specialistRepository.findById(Long.parseLong(administrator.getCurrentSpecialistId())).get();
-                specialist.setOwner(true);
-                specialist.setOwnerId(specialist.getSpecialistId());
-                specialist.setAdministratorIdList("");
-                specialistRepository.save(specialist);
-                administrator.setCurrentSpecialistId(null);
+                deleteSpecialistFromAdministrators(longChatId,
+                        adminRepository.findById(longChatId).get().getCurrentSpecialistId());
                 EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, "Специалист удален.");
                 editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(backText1, "Работа с базой специалистов"));
+                executeEditMessageText(editMessageText);
+
+            } else if (callbackData.equals("Отписаться от специалиста")) {
+                EditMessageText editMessageText;
+                if (adminRepository.findById(longChatId).get().getCurrentSpecialistId() != -1) {
+                    editMessageText = botMethod.createEditMessageText(longChatId, messageId, "❗ Подтвердите отписку.");
+                    editMessageText.setReplyMarkup(botMethod.receiveTwoButtonsMenu(backText2, callbackData_workWithSpecialist, "Отписаться", callbackData_approveLeave));
+                } else {
+                    editMessageText = botMethod.createEditMessageText(longChatId, messageId, "Специалист не выбран.");
+                    editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(backText1, "Работа с базой специалистов"));
+                }
+                executeEditMessageText(editMessageText);
+
+            } else if (callbackData.equals(callbackData_delMyAdmin)) {
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, "❗ Подтвердите удаление.");
+                editMessageText.setReplyMarkup(botMethod.receiveTwoButtonsMenu(backText2, callbackData_workWithAdmin, "Удалить", callbackData_approveDelMyAdmin));
+                executeEditMessageText(editMessageText);
+
+            } else if (callbackData.contains(callbackData_approveLeave)) {
+                Administrator administrator = adminRepository.findById(longChatId).get();
+                deleteAdminFromSpecialist(administrator.getCurrentSpecialistId(), longChatId);
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, "Вы отписались от специалиста.");
+                editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(backText1, callbackData_backToAdminMenu));
+                executeEditMessageText(editMessageText);
+
+            } else if (callbackData.contains(callbackData_approveDelMyAdmin)) {
+                Specialist specialist = specialistRepository.findById(longChatId).get();
+                deleteAdminFromSpecialist(longChatId, specialist.getOwn_administrator().getId());
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, "Администратор удален.");
+                editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(backText1, callbackData_backToSpecMenu));
                 executeEditMessageText(editMessageText);
 
             } else if (callbackData.equals(callbackData_delMyData)) {
@@ -1208,21 +1312,7 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
                 String clientId = callbackData.replace("Авторизовать клиента", ""); // "Авторизовать клиента" + cli.getId()
                 savedClientId.put(stringChatId, Long.parseLong(clientId));
                 int registrationIndex = adminRepository.findById(longChatId).isPresent() ? adminToClientIndex : specialistToClientIndex;
-                String textForMessage;
-                String password = passwordGeneration(registrationIndex);
-                boolean isPasswordExist = !receivePasswordByUserId(stringChatId).equals("null");
-
-                if (isPasswordExist) {
-                    textForMessage = "Вы уже сгенерировали пароль: " + receivePasswordByUserId(stringChatId) + "\nСрок действия пароля еще не истек.";
-                } else if (password.equals(err999)) {
-                    textForMessage = "Ошибка генерации кода...";
-                } else {
-                    textForMessage = "Сгенерирован код для регистрации клиента:  " + password + "\nПосле регистрации статус клиента в меню изменится на '✓ авторизован'.";
-                    storePassword(password, stringChatId);
-                }
-                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, textForMessage);
-                editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(backText1, callbackData_findClientId + clientId));
-                executeEditMessageText(editMessageText);
+                createRegistrationMenu(longChatId, messageId, stringChatId, registrationIndex, callbackData_findClientId + clientId, "Сгенерирован пароль для регистрации клиента:  ");
 
             } else if (callbackData.contains(callbackData_putAwaitList)) {
                 String clientId = callbackData.replace(callbackData_putAwaitList, ""); // callbackData_putAwaitList + cli.getId()
@@ -1234,7 +1324,7 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
                     buttonsMap.put(apt.getDateTime() + buttonText, apt.getId() + callbackData_awaitList + clientId);
                 }
                 buttonsMap.put(backText2, callbackData_findClientId + clientId);
-                executeEditMessageText(botMethod.createUtilMenu(longChatId, messageId, textForMessage, buttonsMap, ""));
+                executeEditMessageText(botMethod.createUtilMenu(longChatId, messageId, textForMessage, buttonsMap));
 
             } else if (callbackData.contains(callbackData_awaitList)) {
                 String[] data = callbackData.split(callbackData_awaitList); //  Appointment.getId() + callbackData_awaitList + clientId
@@ -1278,7 +1368,7 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
                 remarkMenu.put(backText1, callbackData_findClientId + clientId);
                 stringBuilder.append("\n\nДля удаления нажмите клавишу с номером заметки, которую необходимо удалить. Для добавления новой заметки введите текст в поле ввода и отправьте сообщение (новая заметка будет отображена после повторного входа в меню 'Добавить заметку').");
                 String textForMessage = stringBuilder.toString();
-                executeEditMessageText(botMethod.createUtilMenu(longChatId, messageId, textForMessage, remarkMenu, ""));
+                executeEditMessageText(botMethod.createUtilMenu(longChatId, messageId, textForMessage, remarkMenu));
 
             } else if (callbackData.contains(callbackData_delClientRemark)) {//   note = "#" + "note text" + "/";
                 String[] data = callbackData.split(callbackData_delClientRemark); //  i + callbackData_delClientRemark + clientId
@@ -1305,7 +1395,220 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
                 editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(callbackData_back, backToMenu(longChatId)));
                 executeEditMessageText(editMessageText);
 
+            } else if (callbackData.contains(callbackData_appointmentInfo)) {
+                long appointmentId = Long.parseLong(callbackData.replace(callbackData_appointmentInfo, ""));
+                executeEditMessageText(showAppointment(longChatId, messageId, appointmentId));
+
+            } else if (callbackData.contains(callbackData_approveDelAppoint)) {
+                long appointmentId = Long.parseLong(callbackData.replace(callbackData_approveDelAppoint, ""));
+                executeEditMessageText(approveDeleteAppointment(longChatId, messageId, appointmentId));
+
+            } else if (callbackData.contains(callbackData_delAppoint)) {
+                long appointmentId = Long.parseLong(callbackData.replace(callbackData_delAppoint, ""));
+                appointmentRepository.deleteById(appointmentId);
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, "Запись удалена.");
+                editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(backText1, backToMenu(longChatId)));
+                executeEditMessageText(editMessageText);
+
+            } else if (callbackData.equals(callbackData_workWithAdministrators)) {
+                Administrator administrator = adminRepository.findById(longChatId).get();
+                String adminListText = adminRepository.findByOwnerId(administrator.getOwnerId()).toString().replace("[", "").replace("]", "").replaceAll(", ", "");
+                String textForMessage = "Администраторы:\n" + adminListText;
+
+                Map<String, String> buttonMap = new LinkedHashMap<>();
+                if (administrator.isOwner()) {
+                    buttonMap.put("Добавить нового администратора", callbackData_addNewAdmin);
+                    buttonMap.put("Удалить администратора", callbackData_adminForDel);
+                }
+                buttonMap.put(backText1, callbackData_backToAdminMenu);
+                EditMessageText editMessageText = botMethod.createUtilMenu(longChatId, messageId, textForMessage, buttonMap);
+                executeEditMessageText(editMessageText);
+
+            } else if (callbackData.equals(callbackData_workWithAdmin)) {
+                Specialist specialist = specialistRepository.findById(longChatId).get();
+                String adminListText = adminRepository.findByOwnerId(specialist.getOwnerId()).toString().replace("[", "").replace("]", "").replaceAll(", ", "");
+                String textForMessage = "Администраторы:\n" + adminListText;
+                Map<String, String> buttonMap = new LinkedHashMap<>();
+                if (specialist.isOwner()) {
+                    if (specialist.getOwn_administrator() == null) {
+                        buttonMap.put("Добавить администратора", "Добавить администратора");
+                    } else {
+                        buttonMap.put("Удалить администратора", callbackData_delMyAdmin);
+                    }
+                }
+                buttonMap.put(backText1, callbackData_backToSpecMenu);
+                EditMessageText editMessageText = botMethod.createUtilMenu(longChatId, messageId, textForMessage, buttonMap);
+                executeEditMessageText(editMessageText);
+
+            } else if (callbackData.equals(callbackData_addNewAdmin)) {
+                createRegistrationMenu(longChatId, messageId, stringChatId, adminToAdminIndex, "Администраторы", "Сгенерирован пароль для регистрации администратора:  ");
+
+            } else if (callbackData.equals("Добавить администратора")) {
+                createRegistrationMenu(longChatId, messageId, stringChatId, specialistToAdminIndex, "Администратор", "Сгенерирован пароль для регистрации администратора:  ");
+
+            } else if (callbackData.equals(callbackData_adminForDel)) {
+                executeEditMessageText(createDeleteAdminMenu(longChatId, messageId,
+                        "Выберите администратора для удаления:", callbackData_delAdmin));
+
+            } else if (callbackData.contains(callbackData_delAdmin)) {
+                String adminId = callbackData.replace(callbackData_delAdmin, "");
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, "❗ Подтвердите удаление.");
+                editMessageText.setReplyMarkup(botMethod.receiveTwoButtonsMenu(backText1, callbackData_backToAdminMenu,
+                        "Удалить", adminId + callbackData_approveDelAdmin));
+                executeEditMessageText(editMessageText);
+
+            } else if (callbackData.contains(callbackData_approveDelAdmin)) {
+                String adminId = callbackData.replace(callbackData_approveDelAdmin, "");
+                deleteAdministratorFromAdministrators(Long.parseLong(adminId));
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, "Администратор удален.");
+                editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(backText1, callbackData_backToAdminMenu));
+                executeEditMessageText(editMessageText);
+
+            } else if (callbackData.contains("Удалить мой профиль")) {
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, "Для удаления учетной записи отправьте в чат команду /deletedata");
+                editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(backText2, backToSettings(longChatId)));
+                executeEditMessageText(editMessageText);
+
+            } else if (callbackData.contains("Удалить клиента")) {
+                String clientId = callbackData.replace("Удалить клиента", ""); // "Удалить клиента" + cli.getId()
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, "❗ Внимание: после подтверждения будут удалены клиент и все записи клиента.\nПодтвердите удаление.");
+                editMessageText.setReplyMarkup(botMethod.receiveTwoButtonsMenu(backText1, backToMenu(longChatId),
+                        "Удалить", clientId + callbackData_approveDelClient));
+                executeEditMessageText(editMessageText);
+
+            } else if (callbackData.contains(callbackData_approveDelClient)) { // callbackData_approveDelClient + cli.getId()
+                String clientId = callbackData.replace(callbackData_approveDelClient, "");
+                deleteClient(longChatId, Long.parseLong(clientId));
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, "Клиент удален.");
+                editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(backText2, backToMenu(longChatId)));
+                executeEditMessageText(editMessageText);
+
+            } else if (callbackData.contains(callbackData_confirmAppointment)) {
+                String appointmentId = callbackData.replace(callbackData_confirmAppointment, "");
+                Appointment appointment = appointmentRepository.findById(Long.parseLong(appointmentId)).get();
+                appointment.setConfirmAppointment(ConfirmAppointmentStatus.CONFIRMED.getStatusLabel());
+                appointmentRepository.save(appointment);
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, "✔ Спасибо за подтверждение!");
+                editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(okText, stringChatId + callbackData_deleteMessage + messageId));
+                executeEditMessageText(editMessageText);
+
+            } else if (callbackData.contains(callbackData_refuseAppointment)) {
+                String appointmentId = callbackData.replace(callbackData_refuseAppointment, "");
+                Optional<Appointment> optionalAppointment = appointmentRepository.findById(Long.parseLong(appointmentId));
+                if (optionalAppointment.isPresent()) {
+                    Appointment appointment = optionalAppointment.get();
+                    Client client = clientRepository.findById(appointment.getClientId()).get();
+                    Specialist specialist = specialistRepository.findById(appointment.getSpecialistId()).get();
+
+                    if (specialist.isOwner() && specialist.getOwn_administrator() != null) {
+                        SendMessage sendMessage = new SendMessage(String.valueOf(specialist.getId()), "❗ Клиент: " + client.receiveFullName() + "\nотменил визит к: " + specialist.receiveFullName() + "\nназначенный на дату: " + appointment.visitDateText() + "\nЗапись на эту дату удалена.");
+                        sendMessage.setReplyMarkup(botMethod.receiveOneButtonMenu(okText, callbackData_showAwaitList + appointment.getOwnerId()));
+                        executeSendMessage(sendMessage);
+                    } else if (specialist.isOwner()) {
+                        SendMessage sendMessage = new SendMessage(String.valueOf(specialist.getId()), "❗ Клиент: " + client.receiveFullName() + " отменил визит назначенный на дату: " + appointment.visitDateText() + "\nЗапись на эту дату удалена.");
+                        sendMessage.setReplyMarkup(botMethod.receiveOneButtonMenu(okText, callbackData_showAwaitList + appointment.getOwnerId()));
+                        executeSendMessage(sendMessage);
+                    } else {
+                        List<Administrator> administrators = adminRepository.findByOwnerId(appointment.getOwnerId());
+                        administrators.forEach(it -> {
+                            SendMessage sendMessage = new SendMessage(String.valueOf(it.getId()), "❗ Клиент: " + client.receiveFullName() + "\nотменил визит к: " + specialist.receiveFullName() + "\nназначенный на дату: " + appointment.visitDateText() + "\nЗапись на эту дату удалена.");
+                            sendMessage.setReplyMarkup(botMethod.receiveOneButtonMenu(okText, callbackData_showAwaitList + appointment.getOwnerId()));
+                            executeSendMessage(sendMessage);
+                        });
+                    }
+                    appointmentRepository.delete(appointment);
+                }
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, "Вы отменили визит.");
+                editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(okText, stringChatId + callbackData_deleteMessage + messageId));
+                executeEditMessageText(editMessageText);
+
+            } else if (callbackData.contains(callbackData_deleteMessage)) {
+                String[] messageData = callbackData.split(callbackData_deleteMessage);
+                executeDeleteMessage(new DeleteMessage(messageData[0], Integer.parseInt(messageData[1])));
+
+            } else if (callbackData.contains(callbackData_showAwaitList)) {
+                String ownerId = callbackData.replace(callbackData_showAwaitList, "");
+                StringBuilder stringBuilder = new StringBuilder();
+                List<Appointment> appointments = appointmentRepository.findByAwaitAppointment(Long.parseLong(ownerId));
+                Set<Long> clientIds = appointments.stream().map(Appointment::getClientId).collect(Collectors.toSet());
+                Map<Long, Client> clientsMap = clientRepository.findByIdIn(clientIds).stream().
+                        collect(Collectors.toMap(Client::getId, Function.identity()));
+                stringBuilder.append("Лист ожидания:\n");
+                appointments.forEach(it -> stringBuilder.append(it.visitDateText()).append(" • ").
+                        append(clientsMap.get(it.getClientId()).receiveShortName()).append("\n"));
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, stringBuilder.toString());
+                editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(okText, stringChatId + callbackData_deleteMessage + messageId));
+                executeEditMessageText(editMessageText);
+
+            } else if (callbackData.contains("История посещений")) {
+                String clientId = callbackData.replace("История посещений", ""); //   "История посещений" + clientId
+                String textForMessage =  "История посещений:\n" + clientRepository
+                        .findById(Long.parseLong(clientId)).get().getVisitHistory();
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, textForMessage);
+                editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(backText2, callbackData_findClientId + clientId));
+                executeEditMessageText(editMessageText);
+
+            } else if (callbackData.contains("Часовой пояс")) {
+                String textForMessage =  "По умолчанию установлен часовой пояс UTC+3 : Москва. " +
+                        "Для корректной работы приложения необходимо установить часовой пояс пользователя.";
+                Map<String, String> buttonMap = new LinkedHashMap<>();
+                TimeZone[] timeZones = TimeZone.values();
+                for (TimeZone tz : timeZones) {
+                    buttonMap.put(tz.label, callbackData_chooseTimeZone + tz.name());
+                }
+                buttonMap.put(backText2, backToSettings(longChatId));
+                executeEditMessageText(botMethod.createUtilMenu(longChatId, messageId, textForMessage, buttonMap));
+
+            } else if (callbackData.contains(callbackData_chooseTimeZone)) {
+                TimeZone timeZone = TimeZone.valueOf(callbackData.replace(callbackData_chooseTimeZone, ""));
+                String textForMessage = "Вы изменили часовой пояс на: " + timeZone.label;
+                if (adminRepository.existsById(longChatId)) {
+                    Administrator administrator = adminRepository.findById(longChatId).get();
+                    administrator.setTimeZone(timeZone.timeShift);
+                    adminRepository.save(administrator);
+                    //TODO РЕАЛИЗОВАТЬ UPDATE SPECIALISTS and ADMINS
+                } else {
+                    Specialist specialist = specialistRepository.findById(longChatId).get();
+                    specialist.setTimeZone(timeZone.timeShift);
+                    specialistRepository.save(specialist);
+                }
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, textForMessage);
+                editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(backText2, backToSettings(longChatId)));
+                executeEditMessageText(editMessageText);
+
+            } else if (callbackData.equals(callbackData_sendMessageTime)) {
+                String textForMessage =  "По умолчанию установлено время рассылки в 12:00.\n" +
+                        "Вы можете выбрать другое время рассылки:";
+                Map<String, String> buttonMap = new LinkedHashMap<>();
+                for (int i = 7; i < 23; i++) {
+                    buttonMap.put(i + ":00 ч.", callbackData_chooseSendTime + i);
+                }
+                buttonMap.put(backText2, backToSettings(longChatId));
+                executeEditMessageText(botMethod.createUtilMenu(longChatId, messageId, textForMessage, buttonMap));
+
+            } else if (callbackData.contains(callbackData_chooseSendTime)) {
+                int sendTime = Integer.parseInt(callbackData.replace(callbackData_chooseSendTime, ""));
+                String textForMessage = "Вы изменили время рассылки на: " + sendTime + ":00 ч.";
+                if (adminRepository.existsById(longChatId)) {
+                    Administrator administrator = adminRepository.findById(longChatId).get();
+                    administrator.setSendTime(sendTime);
+                    adminRepository.save(administrator);
+                    //TODO РЕАЛИЗОВАТЬ UPDATE SPECIALISTS and ADMINS
+                } else {
+                    Specialist specialist = specialistRepository.findById(longChatId).get();
+                    specialist.setSendTime(sendTime);
+                    specialistRepository.save(specialist);
+                }
+                EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, textForMessage);
+                editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(backText2, backToSettings(longChatId)));
+                executeEditMessageText(editMessageText);
+
             }
+
+
+
+
+
 
 
         }
@@ -1318,19 +1621,19 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
     }
 
 
-    public String backToMenu(long longChatId) {
-        if (adminRepository.findById(longChatId).isPresent()) {
+    public String backToMenu(long chatId) {
+        if (adminRepository.findById(chatId).isPresent()) {
             return callbackData_backToAdminMenu;
-        } else if (specialistRepository.findById(longChatId).isPresent()) {
+        } else if (specialistRepository.findById(chatId).isPresent()) {
             return callbackData_backToSpecMenu;
         }
         return callbackData_backToUserMenu;
     }
 
-    public String backToSettings(long longChatId) {
-        if (adminRepository.findById(longChatId).isPresent()) {
+    public String backToSettings(long chatId) {
+        if (adminRepository.findById(chatId).isPresent()) {
             return callbackData_adminSettings;
-        } else if (specialistRepository.findById(longChatId).isPresent()) {
+        } else if (specialistRepository.findById(chatId).isPresent()) {
             return callbackData_specSettings;
         }
         return callbackData_userSettings;
@@ -1383,19 +1686,20 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
     }
 
     // Метод создает строку-пароль, последний символ которого определяет, для чего пароль был создан
-    private String passwordGeneration(int point) {
+    private String generatePassword(int registrationIndex) {
         int iteration = 0;
-        int lastIndex = ThreadLocalRandom.current().nextInt(point, point + 2);
-        int password = ThreadLocalRandom.current().nextInt(1000, 10000);
+        int lastIndex = ThreadLocalRandom.current().nextInt(0, 10);
+        int midIndex = ThreadLocalRandom.current().nextInt(registrationIndex, registrationIndex + 2);
+        int password = ThreadLocalRandom.current().nextInt(100, 1000);
 
-        while (!receiveIdByPassword(password + "" + lastIndex).equals("null")) {
-            if (iteration == 999) {
-                return err999;
+        while (!receiveIdByPassword(password + "" + midIndex + "" + lastIndex).equals("null")) {
+            if (iteration == 900) {
+                return err900;
             }
-            password = ThreadLocalRandom.current().nextInt(1000, 10000);
+            password = ThreadLocalRandom.current().nextInt(100, 1000);
             iteration++;
         }
-        return password + "" + lastIndex;
+        return password + "" + midIndex + "" + lastIndex;
     }
 
     // Проверка валидности ФИО
@@ -1408,7 +1712,7 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
         editMessageText.setMessageId(messageId);
 
         if (dataText.length() < 15 || !dataText.contains(" ") || !dataText.contains("#") || !dataText.contains("*") ||
-                !dataText.contains("/") || !dataText.contains("$") || !dataText.contains("@")) {
+                !dataText.contains("/")) {
             registerData.put(stringChatId, dataText);
             editMessageText.setText(textForMessage);
             tempData.put(stringChatId, nextStepData);
@@ -1478,28 +1782,6 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
         return false;
     }
 
-    /*
-     */
-    public void createUpdateClientProcess(long longChatId, String stringChatId, long messageId) { // TODO не работает отбраковка
-        boolean isAdminExist = adminRepository.existsById(longChatId);
-        String textForMessage;
-        if (isAdminExist && adminRepository.findById(longChatId).get().getOwnerId().equals(stringChatId) ||
-                specialistRepository.existsById(longChatId)) {
-            textForMessage = "Для редактирования клиента необходимо ввести и отправить измененные данные. Введите фамилию и отправьте сообщение в чат";
-            tempData.put(stringChatId, input_client_surname);
-        } else if (isAdminExist && !adminRepository.findById(longChatId).get().getCurrentSpecialistId().isEmpty()) {
-            Specialist specialist = specialistRepository.
-                    findById(Long.parseLong(adminRepository.findById(longChatId).get().getCurrentSpecialistId())).get();
-            textForMessage = "Вы добавляете нового клиента для специалиста " + specialist.receiveShortName() +
-                    "\nВведите фамилию и отправьте сообщение в чат";
-            tempData.put(stringChatId, input_client_surname);
-        } else {
-            textForMessage = "Сначала необходимо выбрать специалиста.";
-        }
-        EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, textForMessage);
-        editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(callbackData_back, backToMenu(longChatId)));
-        executeEditMessageText(editMessageText);
-    }
 
     public void updateClient(long longChatId, String stringChatId, long clientId, long clientTgId) {
         Client client = clientRepository.findById(clientId).get();
@@ -1528,9 +1810,9 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
                 specialistRepository.existsById(longChatId)) {
             textForMessage = "Введите фамилию и отправьте сообщение в чат";
             tempData.put(stringChatId, input_client_surname);
-        } else if (isAdminExist && !adminRepository.findById(longChatId).get().getCurrentSpecialistId().isEmpty()) {
+        } else if (isAdminExist && adminRepository.findById(longChatId).get().getCurrentSpecialistId() != -1) {
             Specialist specialist = specialistRepository.
-                    findById(Long.parseLong(adminRepository.findById(longChatId).get().getCurrentSpecialistId())).get();
+                    findById(adminRepository.findById(longChatId).get().getCurrentSpecialistId()).get();
             textForMessage = "Вы добавляете нового клиента для специалиста " + specialist.receiveShortName() +
                     "\nВведите фамилию и отправьте сообщение в чат";
             tempData.put(stringChatId, input_client_surname);
@@ -1544,7 +1826,7 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
 
     private void registerClient(long longChatId, String stringChatId) { // TODO утилизация данных и проверка наличия specialistId "UNCERTAIN"
         String callData;
-        String ownerId;
+        long ownerId;
         String textForMessage = "Новый клиент был добавлен. Вы можете авторизовать клиента выбрав соответствующую опцию в меню '" + callbackData_workWithClient + "'.";
 
         if (adminRepository.existsById(longChatId)) {
@@ -1565,17 +1847,20 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
 
     private void registerSpecialist(long longChatId, String stringChatId) {
         Specialist specialist = new Specialist();
+        specialist.setUseTime("");
         specialist.setOwner(true);
         specialist.setTimeZone(0);
+        specialist.setSendTime(12);
         specialist.setPassword("");
         specialist.setId(longChatId);
         specialist.setProfession("");
         specialist.setPhoneNumber("");
+        specialist.setOwnSendText("");
+        specialist.setTgId(longChatId);
+        specialist.setSubscribeData("");
+        specialist.setOwnerId(longChatId);
         specialist.setReceptionSchedule("");
-        specialist.setOwnerId(stringChatId);
-        specialist.setAdministratorIdList("");
         specialist.setClientAppointmentRange("");
-        specialist.setSpecialistId(stringChatId);
         specialist.setWorkTimeLength("8#21");
         specialist.setName(inputtedName.get(stringChatId));
         specialist.setSurname(inputtedSurname.get(stringChatId));
@@ -1585,21 +1870,26 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
         long messageId = savedMessageId.get(stringChatId) == null ? 0 : savedMessageId.get(stringChatId) + 1;
         EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId,
                 inputtedName.get(stringChatId) + " " + inputtedPatronymic.get(stringChatId) + ", спасибо за регистрацию!");
-        editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(callbackData_back, callbackData_backToAdminMenu));
+        editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(callbackData_back, callbackData_backToSpecMenu));
         executeEditMessageText(editMessageText);
     }
 
     private void registerAdministrator(long longChatId, String stringChatId) {
         Administrator administrator = new Administrator();
         administrator.setOwner(true);
+        administrator.setUseTime("");
+        administrator.setTimeZone(0);
+        administrator.setSendTime(12);
         administrator.setPassword("");
         administrator.setId(longChatId);
+        administrator.setOwnSendText("");
         administrator.setPhoneNumber("");
         administrator.setOrganization("");
-        administrator.setSpecialistIdList("");
-        administrator.setOwnerId(stringChatId);
-        administrator.setCurrentSpecialistId("");//null
+        administrator.setTgId(longChatId);
+        administrator.setSubscribeData("");
+        administrator.setOwnerId(longChatId);
         administrator.setWorkTimeLength("8#21");
+        administrator.setCurrentSpecialistId(-1);
         administrator.setName(inputtedName.get(stringChatId));
         administrator.setSurname(inputtedSurname.get(stringChatId));
         administrator.setPatronymic(inputtedPatronymic.get(stringChatId));
@@ -1611,15 +1901,14 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
         executeEditMessageText(editMessageText);
     }
 
-    private void saveClientInDB(String stringChatId, String ownerId) {
+    private void saveClientInDB(String stringChatId, long ownerId) {
         Client client = new Client();
-        client.setTgId(0);
+        client.setTgId(-1);
         client.setClientNotes("");
         client.setOwnerId(ownerId);
         client.setVisitHistory("");
-        client.setWaitNearAppointment(false);
         client.setName(inputtedName.get(stringChatId));
-        client.setConfirmAppointment(UNDEFINED.getStatus());
+        client.setConfirmAppointment(ConfirmAppointmentStatus.UNDEFINED.getStatusLabel()); // delete>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
         client.setSurname(inputtedSurname.get(stringChatId));
         client.setPatronymic(inputtedPatronymic.get(stringChatId));
         client.setPhoneNumber(inputtedPhoneNumber.get(stringChatId));
@@ -1630,7 +1919,7 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
     // показать список всех клиентов
     private void showAllClients(long longChatId, long messageId, String textForMessage, String callbackData) {
         Optional<Administrator> adminOptional = adminRepository.findById(longChatId);
-        String ownerId;
+        long ownerId;
         String mainMenuData;
 
         if (adminOptional.isPresent()) {
@@ -1652,7 +1941,7 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
     }
 
     private EditMessageText receiveClientsSetByFirstSymbol(long longChatId, long messageId, String dataSymbol) {
-        String ownerId;
+        long ownerId;
         String mainMenuData;
         if (adminRepository.existsById(longChatId)) {
             Administrator administrator = adminRepository.findById(longChatId).get();
@@ -1670,23 +1959,22 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
     }
 
     // Метод, формирующий строку-сообщение (для меню поиска клиента по первому символу в фамилии) в зависимости от того, кто запрашивает метод
-    private String createTextForClientSearch(long longChatId) {
+    private String createTextForClientSearch(long longChatId) { // TODO Проверить функционал на предмет возможности записи не овнером-админом
         String text;
         boolean isAdminExist = adminRepository.existsById(longChatId);
-        if (isAdminExist && adminRepository.findById(longChatId).get().isOwner() ||
-                specialistRepository.existsById(longChatId)) {
-            text = "Выберите первую букву фамилии клиента";
-        } else if (isAdminExist && !adminRepository.findById(longChatId).get().getCurrentSpecialistId().isEmpty()) {
+        if (isAdminExist && adminRepository.findById(longChatId).get().getCurrentSpecialistId() != -1) {
             Specialist specialist = specialistRepository.
-                    findById(Long.parseLong(adminRepository.findById(longChatId).get().getCurrentSpecialistId())).get();
+                    findById(adminRepository.findById(longChatId).get().getCurrentSpecialistId()).get();
             text = "Специалист: " + specialist.receiveShortName() + "\n" + "Выберите первую букву фамилии клиента";
+        } else if (specialistRepository.existsById(longChatId)) {
+            text = "Выберите первую букву фамилии клиента";
         } else {
-            text = "Сначала необходимо выбрать специалиста.";
+            text = "Специалист не выбран.";
         }
         return text;
     }
 
-    private String createAppointmentText(String specialistId, String date) { // date = "dd.MM.yyyy"
+    private String createAppointmentText(long specialistId, String date) { // date = "dd.MM.yyyy"
         StringBuilder stringBuilder = new StringBuilder();
         List<Appointment> appointments = appointmentRepository.findBySpecialistId(specialistId).stream().
                 filter(it -> it.getAppointmentDateTime().contains(date)).sorted().toList();
@@ -1696,7 +1984,7 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
         Map<Long, Client> clientsMap = clientRepository.findByIdIn(clientIds).stream().
                 collect(Collectors.toMap(Client::getId, Function.identity()));
 
-        for (Appointment appointment : appointments) {
+        for (Appointment appointment : appointments) { // TODO при удалении клиентов и наличии записи для этих клиентов меню не запускается
             Client clients = clientsMap.get(appointment.getClientId());
             stringBuilder.append(appointment.getAppointmentDateTime().replace("/", " • ")).append("  ").
                     append(clients.receiveShortName()).append("\n");
@@ -1711,15 +1999,15 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
         String textForMenu;
         if (adminRepository.existsById(longChatId)) {
             Administrator administrator = adminRepository.findById(longChatId).get();
-            if (administrator.getCurrentSpecialistId().isEmpty()) {
+            if (administrator.getCurrentSpecialistId() == -1) {
                 textForMenu = "Специалист: специалист не выбран";
             } else {
-                Specialist specialist = specialistRepository.findById(Long.parseLong(administrator.getCurrentSpecialistId())).get();
-                textForMenu = "Специалист: " + specialist.receiveFullName() + "\n" + createAppointmentText(administrator.getCurrentSpecialistId(), localDate.format(formatYear));
+                Specialist specialist = specialistRepository.findById(administrator.getCurrentSpecialistId()).get();
+                textForMenu = "Специалист: " + specialist.receiveFullName() + "\n" + createAppointmentText(administrator.getCurrentSpecialistId(), localDate.format(formatYear));// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
             }
         } else {
             // Specialist specialist = specialistRepository.findById(longChatId).get(); >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-            textForMenu = "Запись на сегодня:\n" + createAppointmentText(stringChatId, localDate.format(formatYear));
+            textForMenu = "Запись на сегодня:\n" + createAppointmentText(longChatId, localDate.format(formatYear));
         }
         return textForMenu;
     }
@@ -1823,18 +2111,18 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
         if (!choseDays.contains("5")) daysOfWeek.put("Пятница", callbackData_weekDay + "5");
         if (!choseDays.contains("6")) daysOfWeek.put("Суббота", callbackData_weekDay + "6");
         if (!choseDays.contains("0")) daysOfWeek.put("Воскресенье", callbackData_weekDay + "0");
-        daysOfWeek.put("Готово", callbackData_chooseWeekDay);
-        return botMethod.createDataButtonSet(daysOfWeek, "");
+        daysOfWeek.put("⏎  Готово", callbackData_chooseWeekDay);
+        return botMethod.createDataButtonSet(daysOfWeek);
     }
 
     private InlineKeyboardMarkup createScheduleButtonsSet(String callBackData) {
         Map<String, String> schedule = new LinkedHashMap<>();
-        schedule.put("1 через 1", "1");
-        schedule.put("2 через 2", "2");
-        schedule.put("3 через 3", "3");
-        schedule.put("4 через 4", "4");
+        schedule.put("1 через 1", "1" + callBackData);
+        schedule.put("2 через 2", "2" + callBackData);
+        schedule.put("3 через 3", "3" + callBackData);
+        schedule.put("4 через 4", "4" + callBackData);
         schedule.put("Назад", "Расписание специалиста");
-        return botMethod.createDataButtonSet(schedule, callBackData);
+        return botMethod.createDataButtonSet(schedule);
     }
 
     private InlineKeyboardMarkup createDateButtonsSet(String callBackData) {
@@ -1842,51 +2130,17 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
         DateTimeFormatter buttonFormat = DateTimeFormatter.ofPattern("dd.MM.yyyy");
         DateTimeFormatter dataFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd");
         Map<String, String> weekend = new LinkedHashMap<>();
-        weekend.put(buttonFormat.format(localDate.plus(1L, DAYS)), dataFormat.format(localDate.plus(1L, DAYS)));
-        weekend.put(buttonFormat.format(localDate.plus(2L, DAYS)), dataFormat.format(localDate.plus(2L, DAYS)));
-        weekend.put(buttonFormat.format(localDate.plus(3L, DAYS)), dataFormat.format(localDate.plus(3L, DAYS)));
-        weekend.put(buttonFormat.format(localDate.plus(4L, DAYS)), dataFormat.format(localDate.plus(4L, DAYS)));
-        weekend.put(buttonFormat.format(localDate.plus(5L, DAYS)), dataFormat.format(localDate.plus(5L, DAYS)));
+        weekend.put(buttonFormat.format(localDate.plus(1L, DAYS)), dataFormat.format(localDate.plus(1L, DAYS)) + callBackData);
+        weekend.put(buttonFormat.format(localDate.plus(2L, DAYS)), dataFormat.format(localDate.plus(2L, DAYS)) + callBackData);
+        weekend.put(buttonFormat.format(localDate.plus(3L, DAYS)), dataFormat.format(localDate.plus(3L, DAYS)) + callBackData);
+        weekend.put(buttonFormat.format(localDate.plus(4L, DAYS)), dataFormat.format(localDate.plus(4L, DAYS)) + callBackData);
+        weekend.put(buttonFormat.format(localDate.plus(5L, DAYS)), dataFormat.format(localDate.plus(5L, DAYS)) + callBackData);
         weekend.put("Назад", "Расписание специалиста");
-        return botMethod.createDataButtonSet(weekend, callBackData);
-    }
-
-    private String createAppointmentText(String specialistId) {
-        StringBuilder stringBuilder = new StringBuilder();
-        List<Appointment> appointments = appointmentRepository.findBySpecialistId(specialistId).stream().sorted().toList();
-        // Собираем specialistId
-        Set<Long> clientIds = appointments.stream().map(Appointment::getClientId).collect(Collectors.toSet());
-        // Загружаем специалистов
-        Map<Long, Client> clientsMap = clientRepository.findByIdIn(clientIds).stream().
-                collect(Collectors.toMap(Client::getId, Function.identity()));
-
-        for (Appointment appointment : appointments) {
-            Client clients = clientsMap.get(appointment.getClientId());
-            stringBuilder.append(appointment.getAppointmentDateTime().replace("/", " • ")).append("  ").
-                    append(clients.receiveShortName()).append("\n");
-        }
-        return stringBuilder.toString();
-    }
-
-    private EditMessageText receiveAppointment(long longChatId, long messageId, String stringChatId) {
-        String mainMenuData;
-        String textForMessage;
-        if (adminRepository.existsById(longChatId)) {
-            mainMenuData = callbackData_backToAdminMenu;
-            Administrator administrator = adminRepository.findById(longChatId).get();
-            Specialist specialist = specialistRepository.findById(Long.parseLong(administrator.getCurrentSpecialistId())).get();
-            textForMessage = "Запись к специалисту: " + specialist.receiveShortName() + "\n\n" + createAppointmentText(administrator.getCurrentSpecialistId());
-        } else {
-            mainMenuData = callbackData_backToSpecMenu;
-            textForMessage = "Запись к вам:\n" + createAppointmentText(stringChatId);
-        }
-        EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, textForMessage);
-        editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(callbackData_back, mainMenuData));
-        return editMessageText;
+        return botMethod.createDataButtonSet(weekend);
     }
 
     private EditMessageText receiveClientsSetByFirstSymbol(long longChatId, long messageId, String firstSurnameSymbol, String callBackData, String textForMessage) {
-        String ownerId;
+        long ownerId;
         String mainMenuData;
         if (adminRepository.existsById(longChatId)) {
             Administrator administrator = adminRepository.findById(longChatId).get();
@@ -1903,6 +2157,307 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
         return editMessageText;
     }
 
+    public void createRegistrationMenu(long longChatId, long messageId, String stringChatId, int registrationIndex, String callbackData, String textForMessage) {
+        String password = generatePassword(registrationIndex);
+        boolean isPasswordExist = !receivePasswordByUserId(stringChatId).equals("null");
+        boolean isOwner = adminRepository.existsById(longChatId) ? adminRepository.findById(longChatId).get().isOwner() :
+                specialistRepository.findById(longChatId).get().isOwner();
+
+        if (isPasswordExist) {
+            textForMessage = "Вы уже сгенерировали пароль: " + receivePasswordByUserId(stringChatId) + "\nСрок действия пароля еще не истек.";
+        } else if (password.equals(err900)) {
+            textForMessage = "Ошибка генерации пароля...";
+        } else if (isOwner) {
+            textForMessage += password;
+            storePassword(password, stringChatId);
+        } else {
+            textForMessage = "У вас нет прав для добавления. Обратитесь к администратору-владельцу базы данных.";
+        }
+        EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, textForMessage);
+        editMessageText.setReplyMarkup(botMethod.receiveOneButtonMenu(backText1, callbackData));
+        executeEditMessageText(editMessageText);
+    }
+
+    private EditMessageText createDeleteAdminMenu(long longChatId, long messageId, String textForMessage, String callbackData) {
+        Administrator administrator = adminRepository.findById(longChatId).get();
+        Map<String, String> buttonMap = new LinkedHashMap<>();
+        List<Administrator> administrators = adminRepository.findByOwnerId(administrator.getOwnerId()).stream().filter(it -> it.getId() != longChatId).toList();
+        for (int i = 0; i < administrators.size(); i++) {
+            buttonMap.put((i + 1) + ". " + administrators.get(i).receiveShortName(),
+                    administrators.get(i).getId() + callbackData);
+        }
+        buttonMap.put(backText1, callbackData_backToAdminMenu);
+        return botMethod.createUtilMenu(longChatId, messageId, textForMessage, buttonMap);
+    }
+
+
+
+    // @Scheduled(cron = "0 0 12 * * ?", zone = "Europe/Moscow") отправка строго по времени
+    // @Scheduled(cron = "1 0 * * * *", zone = "Europe/Moscow")
+    //  @Scheduled(cron = "0 * * * * *", zone = "Europe/Moscow")
+    //  @Scheduled(cron = "0 */2 * * * *")
+    public void createEveryHourEventsTest(){ //TODO
+        collectMessagesForClients();
+        deleteOldAppointments();
+    }
+
+    public void sendMessageIntervalTest(){ //TODO
+        approveAppointment.forEach(this::executeSendMessage);
+        approveAppointment.clear();
+    }
+
+
+
+    @Scheduled(cron = "0 0 * * * *", zone = "Europe/Moscow")
+    public void createEveryHourEvents() {
+        collectMessagesForClients();
+        deleteOldAppointments();
+    }
+
+    @Scheduled(cron = "10 0 * * * *", zone = "Europe/Moscow")
+    public void sendMessageInterval(){
+        approveAppointment.forEach(this::executeSendMessage);
+        approveAppointment.clear();
+    }
+
+
+    public void collectMessagesForClients() {
+        LocalDateTime localDateTime = LocalDateTime.now().plus(1, DAYS);
+        DateTimeFormatter testDateFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy - hh");//TODO
+        DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy");
+        DateTimeFormatter sendTimeFormatter = DateTimeFormatter.ofPattern("k");
+        int sendTime = Integer.parseInt(sendTimeFormatter.format(localDateTime));
+        for (int timeZone = 1; timeZone > -10; timeZone--) {
+            LocalDateTime todayDate = LocalDateTime.now().plus(timeZone + 24, HOURS);
+            List<Appointment> appointments = appointmentRepository.findAppointmentByDateTimeZone(
+                    dateFormatter.format(todayDate), sendTime, timeZone, -1);
+            appointments.forEach(it -> {
+                it.setConfirmAppointment(ConfirmAppointmentStatus.EXPECTANT.getStatusLabel());
+                SendMessage sendMessage = new SendMessage(String.valueOf(it.getClientTgId()), "У вас запланирован визит к: " + it.getSpecialistName() + "\nна дату: " + it.visitDateText() + "\nПожалуйста подтвердите визит.");
+                sendMessage.setReplyMarkup(botMethod.receiveTwoButtonsMenu("❌ Отказаться", callbackData_refuseAppointment + it.getId(),
+                        "Подтвердить ✅", callbackData_confirmAppointment + it.getId()));
+                approveAppointment.add(sendMessage);
+            });
+            System.out.println("TEST timeZone = " + timeZone + "; todayDate = " + testDateFormatter.format(todayDate) + "; sendTime = " + sendTime + ";>>>>>>>>>  List<Appointment> appointments = " + appointments);//TODO
+            appointmentRepository.saveAll(appointments);
+        }
+    }
+
+    @Transactional
+    public void deleteOldAppointments() {
+        DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy"); // 29.11.2025
+        List<Appointment> appointments = new ArrayList<>();
+        for (int timeZone = 1; timeZone > -10; timeZone--) {
+            LocalDateTime yesterdayDate = LocalDateTime.now().minus(timeZone + 24, HOURS);
+           // appointmentRepository.removeAllByDateTime(dateFormatter.format(yesterdayDate), timeZone);
+            appointments.addAll(appointmentRepository
+                    .findAppointmentsByDateTime(dateFormatter.format(yesterdayDate), timeZone));
+        }
+        List <Long> clientsIds = new ArrayList<>();
+        Map<Long, String> dataMap = new HashMap<>();
+        appointments.forEach(it -> {
+            dataMap.put(it.getClientId(), "• " + it.visitDateText() + " ▸ " + it.getAppointmentNote() + "\n");
+            clientsIds.add(it.getClientId());
+        });
+        List<Client> clients = clientRepository.findByIdIn(clientsIds).stream().peek(
+                it -> it.setVisitHistory(dataMap.get(it.getId()) + it.getVisitHistory())).toList();
+        clientRepository.saveAll(clients);
+        appointmentRepository.deleteAll(appointments);
+    }
+
+    /*
+        public void sendMessagesToClients() {
+        LocalDateTime localDateTime = LocalDateTime.now().plus(1, DAYS);
+        DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy");
+        DateTimeFormatter sendTimeFormatter = DateTimeFormatter.ofPattern("h");
+        int sendTime = Integer.parseInt(sendTimeFormatter.format(localDateTime));
+        List<Appointment> appointments = appointmentRepository.findAppointmentByDateTime(
+                dateFormatter.format(localDateTime), sendTime, -1);
+        appointments.forEach(it -> {
+            it.setConfirmAppointment(ConfirmAppointmentStatus.EXPECTANT.getStatusLabel());
+            SendMessage sendMessage = new SendMessage(String.valueOf(it.getClientTgId()), "Подтвердите пожалуйста визит на дату: " + it.visitDateText());
+            sendMessage.setReplyMarkup(botMethod.receiveTwoButtonsMenu("❌ Отказаться", callbackData_refuseAppointment + it.getId(),
+                    "Подтвердить ✅", callbackData_confirmAppointment + it.getId()));
+            approveAppointment.add(sendMessage);
+        });
+        appointmentRepository.saveAll(appointments);
+    }
+
+
+    @Transactional
+    public void manageAppointments() {
+        DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy");
+        LocalDateTime tomorrowDateTime = LocalDateTime.now().plus(1, DAYS);
+        LocalDateTime yesterdayDateTime = LocalDateTime.now().minus(1, DAYS);
+        appointmentRepository.removeAllByDate(dateFormatter.format(yesterdayDateTime));
+        List<Appointment> appointments = appointmentRepository.findAppointmentByDate(
+                dateFormatter.format(tomorrowDateTime), -1);
+        appointments = appointments.stream()
+                .peek(it -> it.setConfirmAppointment(ConfirmAppointmentStatus.EXPECTANT.getStatusLabel())).toList();
+        appointmentRepository.saveAll(appointments);
+    }
+     */
+
+
+    ///////////////////////////////////////////////////////////////////////////////////////////   MODEL   ////////////////////////////////////////////////////////////////////////////////////////////
+
+    @Transactional
+    public void deleteSpecialistFromAdministrators(long administratorId, long specialistId) {
+        Specialist specialist = specialistRepository.findById(specialistId).get();
+        specialistRepository.removeFromAllAdministrators(specialistId);
+        List<Appointment> appointments = appointmentRepository.findBySpecialistId(specialistId);
+        appointmentRepository.deleteAll(appointments);
+        List<Administrator> administrators = adminRepository.findByOwnerId(adminRepository.
+                        findById(administratorId).get().getOwnerId()).stream().
+                filter(it -> it.getCurrentSpecialistId() == specialistId).
+                peek(it -> it.setCurrentSpecialistId(-1)).toList();
+        adminRepository.saveAll(administrators);
+        specialist.getAdministrators().clear();
+        specialist.setOwnerId(specialistId);
+        specialist.setOwner(true);
+        specialistRepository.save(specialist);
+    }
+
+    @Transactional
+    public void addSpecialistToAdministrators(long administratorId, long specialistId) {
+        Administrator administrator = adminRepository.findById(administratorId).get();
+        Specialist specialist = specialistRepository.findById(specialistId).get();
+        // Добавление атрибутов администратора-владельца приглашенному специалисту
+        specialist.setOwnerId(administrator.getOwnerId());
+        specialist.setOwner(false);
+        specialist.setSendTime(administrator.getSendTime());
+        specialist.setTimeZone(administrator.getTimeZone());
+        specialist.setOwnSendText(administrator.getOwnSendText());
+        specialist.setWorkTimeLength(administrator.getWorkTimeLength());
+        specialistRepository.save(specialist);
+        // Все личные клиенты специалиста должны быть удалены
+        clientRepository.deleteAll(clientRepository.findByOwnerId(specialistId));
+        Specialist addedSpecialist = specialistRepository.findById(specialistId).get();
+        // Добавление специалиста всем администратором
+        List<Administrator> administrators = adminRepository.findByOwnerId(administrator.getOwnerId()).stream().
+                peek(it -> it.getSpecialists().add(addedSpecialist)).toList();
+        adminRepository.saveAll(administrators);
+
+    }
+
+    @Transactional
+    public void addAdministratorToAdministrators(long appenderId, long administratorId) {
+        Administrator superAdministrator = adminRepository.findById(appenderId).get();
+        Administrator administrator = adminRepository.findById(administratorId).get();
+        administrator.setOwnerId(superAdministrator.getOwnerId());
+        administrator.setOwner(false);
+        administrator.setSendTime(superAdministrator.getSendTime());
+        administrator.setTimeZone(superAdministrator.getTimeZone());
+        administrator.setOwnSendText(superAdministrator.getOwnSendText());
+        administrator.setCurrentSpecialistId(superAdministrator.getCurrentSpecialistId());
+        adminRepository.save(administrator);
+        adminRepository.addAdministratorToAllSpecialists(administratorId);
+    }
+
+    @Transactional
+    public void deleteAdministratorFromAdministrators(long administratorId) {
+        adminRepository.removeFromAllAdministrators(administratorId);
+        Administrator administrator = adminRepository.findById(administratorId).get();
+        administrator.setOwner(true);
+        administrator.setCurrentSpecialistId(-1);
+        administrator.setOwnerId(administratorId);
+        adminRepository.save(administrator);
+    }
+
+    @Transactional
+    public void addAdministratorToSpecialist(long specialistId, long administratorId) {
+        Administrator administrator = adminRepository.findById(administratorId).get();
+        clientRepository.deleteAllByOwnerId(administratorId);
+        Specialist specialist = specialistRepository.findById(specialistId).get();
+        administrator.setOwnerId(specialist.getOwnerId());
+        administrator.setCurrentSpecialistId(specialistId);
+        administrator.setOwner(false);
+        administrator.setSendTime(specialist.getSendTime());
+        administrator.setTimeZone(specialist.getTimeZone());
+        adminRepository.save(administrator);
+        administrator.getSpecialists_owners().add(specialist);
+        administrator = adminRepository.findById(administratorId).get();
+        specialist.setOwn_administrator(administrator);
+        specialistRepository.save(specialist);
+    }
+
+
+    public void deleteAdminFromSpecialist(long specialistId, long administratorId) {
+        Specialist specialist = specialistRepository.findById(specialistId).get();
+        Administrator administrator = adminRepository.findById(administratorId).get();
+        Specialist specialistForDel = administrator.getSpecialists_owners().stream().filter(it -> it.getId() == specialistId).findFirst().get();
+        administrator.getSpecialists_owners().remove(specialistForDel);
+        if (administrator.getSpecialists_owners().isEmpty()) {
+            administrator.setOwnerId(administratorId);
+            administrator.setOwner(true);
+            administrator.setCurrentSpecialistId(-1);
+        }
+        adminRepository.save(administrator);
+        specialist.setOwn_administrator(null);
+        specialistRepository.save(specialist);
+    }
+
+    @Transactional
+    public void deleteSpecialistData(long specialistId) {
+        Specialist specialist = specialistRepository.findById(specialistId).get();
+        if (specialist.isOwner()) {
+            clientRepository.deleteAllByOwnerId(specialistId);
+            appointmentRepository.removeAllByOwnerId(specialistId);
+            if (specialist.getOwn_administrator() != null) {
+                deleteAdminFromSpecialist(specialistId, specialist.getOwn_administrator().getId());
+            }
+        }
+        specialistRepository.removeFromAllAdministrators(specialistId);
+        List<Administrator> administrators = adminRepository.findByCurrentSpecialistId(specialistId).stream().peek(it -> it.setCurrentSpecialistId(-1)).toList();
+        adminRepository.saveAll(administrators);
+        specialistRepository.delete(specialist);
+    }
+
+    @Transactional
+    public void deleteAdministratorData(long administratorId) {
+        Administrator administrator = adminRepository.findById(administratorId).get();
+        if (administrator.isOwner()) {
+            List<Administrator> administrators = adminRepository.findByOwnerId(administratorId).stream().peek(it -> {
+                it.setCurrentSpecialistId(-1);
+                it.setOwnerId(it.getId());
+                it.setOrganization("");
+                it.setOwner(true);
+                it.getSpecialists().clear();
+            }).toList();
+            adminRepository.removeAllByOwnerId(administratorId);
+            adminRepository.saveAll(administrators);
+
+            List<Specialist> specialists = specialistRepository.findByOwnerId(administratorId).stream().peek(it -> {
+                it.getAdministrators().clear();
+                it.setOwnerId(it.getId());
+                it.setOwner(true);
+            }).toList();
+            specialistRepository.saveAll(specialists);
+
+            clientRepository.deleteAllByOwnerId(administratorId);
+            appointmentRepository.removeAllByOwnerId(administratorId);
+        } else {
+            List<Specialist> specialists = specialistRepository.findByIdIn(
+                    administrator.getSpecialists_owners().stream().map(Specialist::getId).toList()
+            ).stream().peek(it -> it.setOwn_administrator(null)).toList();
+            specialistRepository.saveAll(specialists);
+        }
+        adminRepository.delete(administrator);
+    }
+
+    public void deleteUserData(long userId) {
+        List<Client> clients = clientRepository.findByTgId(userId).stream().peek(it -> it.setTgId(0)).toList();
+        clientRepository.saveAll(clients);
+        User user = userRepository.findById(userId).get();
+        userRepository.delete(user);
+    }
+
+    public void deleteClient(long ownerId, long clientId) {
+        clientRepository.deleteById(clientId);
+        appointmentRepository.deleteAll(appointmentRepository.findByClientId(ownerId));
+    }
+
+///////////////////////////////////////////////////////////////////////////////////////////   MODEL   ////////////////////////////////////////////////////////////////////////////////////////////
 
     public void executeSendMessage(SendMessage sendMessage) {
         try {
@@ -1976,8 +2531,8 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
         try {
             invoiceLincUrl = execute(createInvoiceLink);
         } catch (TelegramApiException e) {
-            log.error("SendMessage execute error: " + e.getMessage());
-            System.out.println("Err: " + e.getMessage());
+            // log.error("SendMessage execute error: " + e.getMessage());
+            System.out.println("Err: " + e.getMessage()); //TODO
         }
         return invoiceLincUrl;
     }
@@ -2001,11 +2556,117 @@ public class TelegramBotCommands extends TelegramLongPollingBot {
         }
     }
 
+    private EditMessageText appointmentMenu(long longChatId, long messageId) {
+        DateTimeFormatter parseDate = DateTimeFormatter.ofPattern("dd.MM.yyyy");
+        DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("d MMM");
+        String mainMenuData;
+        String textForMessage;
+        long specialistId;
+
+        if (adminRepository.existsById(longChatId)) {
+            mainMenuData = callbackData_backToAdminMenu;
+            Administrator administrator = adminRepository.findById(longChatId).get();
+
+            if (administrator.getCurrentSpecialistId() != -1) {
+                Specialist specialist = specialistRepository.findById(administrator.getCurrentSpecialistId()).get();
+                textForMessage = "Запись к специалисту: " + specialist.receiveFullName() + "\nДля просмотра информации о записи нажмите соответствующую клавишу.";
+                specialistId = specialist.getId();
+            } else {
+                textForMessage = "Специалист не выбран.";
+                specialistId = -1;
+            }
+        } else {
+            mainMenuData = callbackData_backToSpecMenu;
+            textForMessage = "Запись к вам:\nДля просмотра информации о записи нажмите соответствующую клавишу.";
+            specialistId = longChatId;
+        }
+        List<Appointment> appointments = appointmentRepository.findBySpecialistId(specialistId).stream().sorted().toList();
+        Set<Long> clientIds = appointments.stream().map(Appointment::getClientId).collect(Collectors.toSet());
+        // Загрузка клиентов
+        Map<Long, Client> clientsMap = clientRepository.findByIdIn(clientIds).stream().
+                collect(Collectors.toMap(Client::getId, Function.identity()));
+        Map<String, String> buttonData = new LinkedHashMap<>();
+        for (Appointment apt : appointments) {
+            String[] dateAndTime = apt.getAppointmentDateTime().split(" - ");
+            LocalDate date = LocalDate.parse(dateAndTime[0], parseDate);
+            buttonData.put(dateFormatter.format(date) + " " + dateAndTime[1].replace("/", ":") + " • " +
+                    clientsMap.get(apt.getClientId()).receiveShortName(), apt.getId() + callbackData_appointmentInfo);
+        }
+        buttonData.put(backText1, mainMenuData);
+        return botMethod.createUtilMenu(longChatId, messageId, textForMessage, buttonData);
+    }
+
+    private EditMessageText showAppointment(long longChatId, long messageId, long appointmentId) {
+        Appointment appointment = appointmentRepository.findById(appointmentId).get();
+        Client client = clientRepository.findById(appointment.getClientId()).get();
+        String textForMessage = "Клиент: " + client.receiveFullName() + "\n" +
+                appointment.getAppointmentDateTime().replace("/", " • ") + "\n" + "Комментарий: " +
+                appointment.getAppointmentNote();
+        EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, textForMessage);
+        editMessageText.setReplyMarkup(botMethod.receiveTwoButtonsMenu(backText2, "Посмотреть запись", "Удалить запись", appointmentId + callbackData_approveDelAppoint));
+        return editMessageText;
+    }
+
+    private EditMessageText approveDeleteAppointment(long longChatId, long messageId, long appointmentId) {
+        String mainMenuData = adminRepository.existsById(longChatId) ? callbackData_backToAdminMenu : callbackData_backToSpecMenu;
+        String textForMessage = "❗ Необходимо подтвердить удаление.";
+        EditMessageText editMessageText = botMethod.createEditMessageText(longChatId, messageId, textForMessage);
+        editMessageText.setReplyMarkup(botMethod.receiveTwoButtonsMenu("Отмена", mainMenuData, "Удалить", appointmentId + callbackData_delAppoint));
+        return editMessageText;
+    }
+
 
     String textToUser = "Здравствуйте! Вы можете смотреть и изменять свою запись, " +
             "можете зарегистрироваться в качестве специалиста или администратора";
 
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+    private InlineKeyboardMarkup createSpecialistMenu() {
+        Map<String, String> dataButtonSet = new LinkedHashMap<>();
+        dataButtonSet.put(callbackData_addClient, callbackData_addClient);
+        dataButtonSet.put("Записать на прием", "Записать на прием");
+        dataButtonSet.put("Посмотреть запись", "Посмотреть запись");
+        dataButtonSet.put(callbackData_workWithClient, callbackData_workWithClient);
+        dataButtonSet.put(callbackData_workWithAdmin, callbackData_workWithAdmin);
+        dataButtonSet.put(callbackData_specSettings, callbackData_specSettings);
+        return botMethod.createDataButtonSet(dataButtonSet);
+    }
+
+    private InlineKeyboardMarkup createAdminMenu() {
+        Map<String, String> dataButtonSet = new LinkedHashMap<>();
+        dataButtonSet.put(callbackData_choseSpecialist, callbackData_choseSpecialist);
+        dataButtonSet.put(callbackData_addClient, callbackData_addClient);
+        dataButtonSet.put("Записать на прием", "Записать на прием");
+        dataButtonSet.put("Посмотреть запись", "Посмотреть запись");
+        dataButtonSet.put(callbackData_workWithClient, callbackData_workWithClient);
+        dataButtonSet.put(callbackData_workWithSpecialist, callbackData_workWithSpecialist);
+        dataButtonSet.put(callbackData_workWithAdministrators, callbackData_workWithAdministrators);
+        dataButtonSet.put(callbackData_adminSettings, callbackData_adminSettings);
+        return botMethod.createDataButtonSet(dataButtonSet);
+    }
+
+
+    private long registerTestSpecialist() {
+        long id = ThreadLocalRandom.current().nextInt(100, 1000);
+        Specialist specialist = new Specialist();
+        specialist.setOwner(true);
+        specialist.setTimeZone(0);
+        specialist.setSendTime(12);
+        specialist.setPassword("");
+        specialist.setId(id);
+        specialist.setProfession("");
+        specialist.setPhoneNumber("");
+        specialist.setReceptionSchedule("");
+        specialist.setOwnerId(id);
+        specialist.setClientAppointmentRange("");
+        specialist.setWorkTimeLength("8#21");
+        specialist.setName("Иван" + id);
+        specialist.setSurname("Иванович" + id);
+        specialist.setPatronymic("Иванов" + id);
+        specialistRepository.save(specialist);
+        return id;
+    }
 
 
 }

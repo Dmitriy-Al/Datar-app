@@ -1,8 +1,7 @@
 package ru.alimovdev.datar.model;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
+import jakarta.persistence.*;
+import java.util.List;
 
 @lombok.Setter
 @lombok.Getter
@@ -12,14 +11,17 @@ public class Administrator {
     @Id
     private long id;
 
-    private String ownerId;
+    private long tgId;
 
-    @Column(columnDefinition = "varchar(1000000)")
-    private String specialistIdList;
+    private long ownerId;
 
-    private String currentSpecialistId;
+    private long currentSpecialistId;
 
     private String name;
+
+    private String subscribeData;
+
+    private String useTime;
 
     private String surname;
 
@@ -27,17 +29,29 @@ public class Administrator {
 
     private String phoneNumber;
 
+    private String ownSendText;
+
     private String password;
 
     private String organization;
 
     private boolean isOwner;
 
+    private int sendTime;
+
+    private int timeZone;
+
     private String workTimeLength; // рабочий день
+
+    @OneToMany(mappedBy = "own_administrator", fetch = FetchType.EAGER)
+    List<Specialist> specialists_owners;
+
+   @ManyToMany(fetch = FetchType.EAGER)
+    private List<Specialist> specialists;
 
     @Override
     public String toString() {
-        return " < Administrator name: " + name + ", id = " + id + "> ";
+        return "•  " + receiveFullName() + "\n";
     }
 
     public String receiveShortName() {
@@ -49,3 +63,4 @@ public class Administrator {
     }
 
 }
+

@@ -1,5 +1,7 @@
 package ru.alimovdev.datar.restcontroller;
+
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import ru.alimovdev.datar.model.Specialist;
@@ -15,6 +17,15 @@ import java.util.Optional;
 public class SpecialistController {
     @Autowired
     private SpecialistRepository specialistRepository;
+
+
+    /*
+    // Обработка OPTIONS запросов для CORS (TODO добавил)
+    @RequestMapping(value = "/*****", method = RequestMethod.OPTIONS)
+    public ResponseEntity<?> handleOptions() {
+        return ResponseEntity.ok().build();
+    }
+   */
 
     // Обработка OPTIONS запросов для CORS (TODO добавил)
     @RequestMapping(value = "/*****", method = RequestMethod.OPTIONS)
@@ -38,7 +49,6 @@ public class SpecialistController {
 
     // Удалить пользователя
     @DeleteMapping("/specialists/{id}")
-
     public void deleteASpecialist(@PathVariable long id) {
         specialistRepository.deleteById(id);
     }
@@ -62,4 +72,33 @@ public class SpecialistController {
         return specialistList;
     }
 
+
+
+
 }
+
+/*
+    @PostMapping("/specialists/by-owner-id/{ownerId}") // TODO добавил 21.11.25 для поиска элементов по ownerId
+    public ResponseEntity<List<Specialist>> getSpecialistsByOwnerId(@PathVariable long ownerId) {
+        try {
+            List<Specialist> specialists = specialistRepository.findByOwnerId(ownerId);
+            return ResponseEntity.ok(specialists);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+        @PostMapping("/specialists/by-owner-id/{ownerId}") // TODO добавил 21.11.25 для поиска элементов по ownerId
+    public ResponseEntity<List<Specialist>> getSpecialistsByOwnerId(@PathVariable long ownerId) {
+        try {
+            List<Specialist> specialists = specialistRepository.findByOwnerId(ownerId);
+            return ResponseEntity.ok(specialists);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+
+
+
+ */

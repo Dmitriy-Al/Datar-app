@@ -13,23 +13,28 @@ public class Appointment implements Comparable<Appointment> {
 
     private long clientId;
 
-    private String ownerId;
+    private long clientTgId;
 
-    private String specialistId;
+    private long ownerId;
+
+    private String ownSendText;
+
+    private long specialistId; // идентификационный номер специалиста
+
+    private String specialistName;
 
     private String confirmAppointment;
 
-    private String appointmentDateTime; // время предстоящего приема TODO
+    private String appointmentDateTime; // время предстоящего приема 04.12.2025 - 16:20/19:20
+
+    private int sendTime;
+
+    private int timeZone;
 
     @Column(columnDefinition = "varchar(1000000)")
     private String appointmentNote; // заметка о том, что предстоит сделать в рамках предстоящего приема
 
     private boolean waitNearAppointment; // отметка о том, что клиент готов перезаписаться на ближайшее свободное время приема (если true)
-
-    @Override
-    public String toString(){
-        return " <Appointment" + ": specialistId = " + specialistId  + "; clientId = " + clientId  + "; DateTime = " + appointmentDateTime + ">\n";
-    }
 
     @Override
     public int compareTo(Appointment o) {
@@ -42,4 +47,12 @@ public class Appointment implements Comparable<Appointment> {
         return appointmentDateTime.replace("/", " • ");
     }
 
+    public String visitDateText() {
+        return appointmentDateTime.replace(" - ", " с ").replace("/", " до ");
+    }
+
+    @Override
+    public String toString() {
+        return "< appointmentDateTime = " + appointmentDateTime + ";  sendTime = " + sendTime + "> ";
+    }
 }

@@ -120,7 +120,7 @@ public enum ScheduleType { // "Фиксированный график", "Чет
     };
 
     // Да, да, да, я в знаю что есть .name()
-    private final String label;
+    public final String label;
 
     ScheduleType(String label) {
         this.label = label;

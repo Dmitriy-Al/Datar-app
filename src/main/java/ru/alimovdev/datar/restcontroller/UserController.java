@@ -18,6 +18,7 @@ public class UserController {
     @Autowired
     private UserRepository userRepository;
 
+
     // Обработка OPTIONS запросов для CORS (TODO добавил)
     //  @RequestMapping(value = "/**", method = RequestMethod.OPTIONS)
     @RequestMapping(value = "/*", method = RequestMethod.OPTIONS)//(TODO добавил)

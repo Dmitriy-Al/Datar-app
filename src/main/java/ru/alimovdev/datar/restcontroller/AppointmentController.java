@@ -20,17 +20,29 @@ public class AppointmentController {
 
     @Autowired
     private ClientRepository clientRepository;
-
+/*
     // Получение всех записей по specialistId
     @GetMapping("/appointments/by-specialist-id/{specialistId}")
-    public ResponseEntity<List<Appointment>> getAppointmentsBySpecialistId(@PathVariable String specialistId) {
+    public ResponseEntity<List<Appointment>> getAppointmentsBySpecialistId(@PathVariable String specialId) { // TODO переименовать связанные методы specialId
         try {
-            List<Appointment> appointments = appointmentRepository.findBySpecialistId(specialistId);
+            List<Appointment> appointments = appointmentRepository.findByProfessionalId(specialId); // TODO переименовать связанные методы specialId
             return ResponseEntity.ok(appointments);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
+ */
+
+// Получение всех записей по specialistId
+@GetMapping("/appointments/by-specialist-id/{specialistId}")
+public ResponseEntity<List<Appointment>> getAppointmentsBySpecialistId(@PathVariable long specialistId) { // TODO проверить и изменить при необходимости типизацию в вебе
+    try {
+        List<Appointment> appointments = appointmentRepository.findBySpecialistId(specialistId);
+        return ResponseEntity.ok(appointments);
+    } catch (Exception e) {
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+    }
+}
 
     // Создание новой записи
     @PostMapping("/appointments")

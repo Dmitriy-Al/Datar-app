@@ -12,8 +12,8 @@ public class CorsConfig {
         return new WebMvcConfigurer() {
             @Override
             public void addCorsMappings(CorsRegistry registry) {
-                registry.addMapping("/api/**")
-                        .allowedOrigins("*") // TODO ONLY FOR TESTS!
+                registry.addMapping("/api/**") //registry.addMapping("/api/**")
+                        .allowedOrigins("*") // TODO ONLY FOR TESTS!    .allowedOrigins("*")     .allowedOriginPatterns("*")  .allowedOriginPatterns("null", "*")
                         /*
                         .allowedOrigins(
                                 "https://dmitriy-al.github.io",
@@ -24,7 +24,26 @@ public class CorsConfig {
                         .allowedHeaders("*")
                         .allowCredentials(false)
                         .maxAge(3600);
+
             }
         };
     }
 }
+
+/*
+
+    @Bean
+    public CorsFilter corsFilter() {
+        CorsConfiguration config = new CorsConfiguration();
+        config.setAllowCredentials(false);
+        config.addAllowedOrigin("*"); // Разрешаем все origins
+        config.addAllowedHeader("*");
+        config.addAllowedMethod("*");
+        config.setMaxAge(3600L);
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", config); // Применяем ко всем путям
+
+        return new CorsFilter(source);
+    }
+ */

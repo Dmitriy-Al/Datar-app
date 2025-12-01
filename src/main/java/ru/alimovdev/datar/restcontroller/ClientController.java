@@ -19,6 +19,8 @@ public class ClientController {
     @Autowired
     private ClientRepository clientRepository;
 
+
+
     // Обработка OPTIONS запросов для CORS (TODO добавил)
     // to {OPTIONS [/api/**]}: There is already 'administratorController' bean method
     @RequestMapping(value = "/****", method = RequestMethod.OPTIONS)
@@ -59,7 +61,7 @@ public class ClientController {
 
     // Поиск специалистов по specialistId (не по ID!)// TODO добавил для поиска элементов по specialistId
     @GetMapping("/clients/by-specialist-id/{specialistId}")
-    public List<Client> getClientsBySpecialistId(@PathVariable String specialistId) {
+    public List<Client> getClientsBySpecialistId(@PathVariable long specialistId) {
         return clientRepository.findByOwnerId(specialistId);
     }
 
@@ -101,7 +103,7 @@ public class ClientController {
 
 
     @GetMapping("/clients/by-owner-id/{ownerId}")// TODO добавил 21.10.2025
-    public ResponseEntity<List<Client>> getClientsByOwnerId(@PathVariable String ownerId) {
+    public ResponseEntity<List<Client>> getClientsByOwnerId(@PathVariable long ownerId) {
         try {
             List<Client> clients = clientRepository.findByOwnerId(ownerId);
             return ResponseEntity.ok(clients);
@@ -110,7 +112,7 @@ public class ClientController {
         }
     }
 
-    @PostMapping("/clients/by-ids") // TODO добавил 14.11.25
+    @PostMapping("/clients/by-ids") // TODO добавил 14.11.25, надо будет переделать поиск клиентов в miniapp-html по  List<Long> ids
     public List<Client> getClientsByIds(@RequestBody List<Long> ids) {
         Iterable<Client> clients = clientRepository.findAllById(ids);
         List<Client> clientsList = new ArrayList<>();

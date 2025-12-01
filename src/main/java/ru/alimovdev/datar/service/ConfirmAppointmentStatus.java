@@ -2,19 +2,18 @@ package ru.alimovdev.datar.service;
 
 public enum ConfirmAppointmentStatus {
 
-    UNDEFINED("UNDEFINED"),
-    CONFIRMED("CONFIRMED"),
-    EXPECTANT("EXPECTANT"),
-    UNCERTAIN("UNCERTAIN");
+    UNDEFINED("UNDEFINED"), // статус для неавторизованного пользователя
+    CONFIRMED("CONFIRMED"), // статус для подтвердившего визит пользователя
+    EXPECTANT("EXPECTANT"); // статус для ожидающего подтверждения визита пользователя
 
-    // Аналог .name()
+    // ConfirmAppointmentStatus.name()
     private final String statusLabel;
 
     ConfirmAppointmentStatus(String statusLabel) {
         this.statusLabel = statusLabel;
     }
 
-    public String getStatus() {
+    public String getStatusLabel() {
         return statusLabel;
     }
 

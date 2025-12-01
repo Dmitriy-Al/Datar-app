@@ -13,7 +13,7 @@ public class Client {
 
     private long tgId;
 
-    private String ownerId;
+    private long ownerId;
 
     private String name;
 
@@ -23,8 +23,6 @@ public class Client {
 
     @Column(columnDefinition = "varchar(1000000)")
     private String clientNotes; // заметки о клиенте
-
-    private boolean waitNearAppointment; // отметка о том, что клиент готов перезаписаться на ближайшее свободное время приема (если true)
 
     @Column(columnDefinition = "varchar(1000000)")
     private String visitHistory; // история посещений
@@ -51,7 +49,11 @@ public class Client {
     public String receiveClientInfo() {
         String status = tgId > 0 ? "Статус:  ✓ авторизован" : "Статус:  ✘ не авторизован";
         return receiveFullName() + "\n" + status + "\n" + "Телефон:  " + phoneNumber + "\n" +
-                "Дата рождения:  " + birthdate + "\n" + "История посещений:  " + visitHistory;
+                "Дата рождения:  " + birthdate;
+    }
+
+    public String receiveVisitHistoryInfo() {
+        return "История посещений:\n" + visitHistory;
     }
 
 

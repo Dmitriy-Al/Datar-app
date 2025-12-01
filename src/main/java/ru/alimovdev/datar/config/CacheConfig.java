@@ -22,7 +22,7 @@ public class CacheConfig {
         // Настраиваем параметры кэша с помощью Caffeine builder
         cacheManager.setCaffeine(Caffeine.newBuilder()
               //  .expireAfterWrite(5, TimeUnit.MINUTES) // Устанавливает TTL (Time To Live) -
-                .expireAfterWrite(40, TimeUnit.SECONDS) // Устанавливает TTL (Time To Live) -
+                .expireAfterWrite(30, TimeUnit.SECONDS) // Устанавливает TTL (Time To Live) -
                 // записи автоматически удаляются через 5 минут после создания
                 .maximumSize(1000));                   // Максимальное количество записей в кэше -
         // при превышении старые записи удаляются

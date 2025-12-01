@@ -17,6 +17,7 @@ public class AdministratorController {
     @Autowired
     private AdministratorRepository adminRepository;
 
+
     // Обработка OPTIONS запросов для CORS (TODO добавил)
     @RequestMapping(value = "/**", method = RequestMethod.OPTIONS)
     public ResponseEntity<?> handleOptions() {
